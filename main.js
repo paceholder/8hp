@@ -1119,7 +1119,7 @@ function solveSpeeds(gear) {
 // STATE
 // ─────────────────────────────────────────────────────────────────────────────
 
-let currentGear = '1';
+let currentGear = '8';
 let targetSpeeds = solveSpeeds('1');
 let curSpeeds = { ...targetSpeeds };
 let animSpeed = 1.0;
@@ -1679,7 +1679,7 @@ const STORAGE_KEY = 'zf8hp_settings';
 function saveSettings() {
     const s = {};
     // Toggles
-    ['show-tc','show-housing','show-shafts','show-gears','show-gs1','show-gs2','show-gs3','show-gs4',
+    ['show-tc','show-shafts','show-gears','show-gs1','show-gs2','show-gs3','show-gs4',
      'show-clutches','show-flow'].forEach(id => {
         s[id] = document.getElementById(id).checked;
     });
@@ -1698,7 +1698,7 @@ function loadSettings() {
     if (!s) return;
 
     // Toggles — set checkbox and fire change event
-    ['show-tc','show-housing','show-shafts','show-gears','show-gs1','show-gs2','show-gs3','show-gs4',
+    ['show-tc','show-shafts','show-gears','show-gs1','show-gs2','show-gs3','show-gs4',
      'show-clutches','show-flow'].forEach(id => {
         if (s[id] !== undefined) {
             const el = document.getElementById(id);
@@ -1727,7 +1727,6 @@ document.querySelectorAll('.gear-btn').forEach(b =>
     b.addEventListener('click', () => { setGear(b.dataset.gear); saveSettings(); }));
 
 document.getElementById('show-tc').addEventListener('change', e => { tcGroup.visible = e.target.checked; saveSettings(); });
-document.getElementById('show-housing').addEventListener('change', e => { housingGrp.visible = e.target.checked; saveSettings(); });
 document.getElementById('show-shafts').addEventListener('change', e => { shaftGrp.visible = e.target.checked; saveSettings(); });
 document.getElementById('show-gears').addEventListener('change', e => { gearGrp.visible = e.target.checked; saveSettings(); });
 document.getElementById('show-clutches').addEventListener('change', e => { clutchGrp.visible = e.target.checked; saveSettings(); });
@@ -1736,6 +1735,7 @@ document.getElementById('show-flow').addEventListener('change', e => { flowGroup
 document.getElementById('housing-opacity').addEventListener('input', e => {
     const v = e.target.value / 100;
     document.getElementById('opacity-val').textContent = `${e.target.value}%`;
+    housingGrp.visible = v > 0.01;
     housingGrp.traverse(ch => { if (ch.isMesh && ch.material.transparent) ch.material.opacity = v; });
     saveSettings();
 });
@@ -1795,5 +1795,9 @@ window.addEventListener('resize', () => {
 // ── GO ───────────────────────────────────────────────────────────────────────
 
 const savedGear = loadSettings();
-setGear(savedGear || '1');
+// Fire initial slider values so defaults (drum=0, housing=0) take effect
+['housing-opacity','drum-opacity'].forEach(id => {
+    document.getElementById(id).dispatchEvent(new Event('input'));
+});
+setGear(savedGear || '8');
 animate();

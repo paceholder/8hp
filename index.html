@@ -28,26 +28,26 @@
     <nav id="gear-strip">
         <button data-gear="R" class="gear-btn">R</button>
         <div class="gear-divider"></div>
-        <button data-gear="1" class="gear-btn active">1</button>
+        <button data-gear="1" class="gear-btn">1</button>
         <button data-gear="2" class="gear-btn">2</button>
         <button data-gear="3" class="gear-btn">3</button>
         <button data-gear="4" class="gear-btn">4</button>
         <button data-gear="5" class="gear-btn">5</button>
         <button data-gear="6" class="gear-btn">6</button>
         <button data-gear="7" class="gear-btn">7</button>
-        <button data-gear="8" class="gear-btn">8</button>
+        <button data-gear="8" class="gear-btn active">8</button>
     </nav>
 
     <!-- Ratio bar -->
     <div id="ratio-bar">
         <div class="ratio-item">
             <span class="ratio-label">Gear</span>
-            <span class="ratio-value" id="current-gear">1st</span>
+            <span class="ratio-value" id="current-gear">8th</span>
         </div>
         <div class="ratio-sep"></div>
         <div class="ratio-item">
             <span class="ratio-label">Ratio</span>
-            <span class="ratio-value" id="current-ratio">4.696</span>
+            <span class="ratio-value" id="current-ratio">0.667</span>
         </div>
         <div class="ratio-sep"></div>
         <div class="ratio-item">
@@ -71,10 +71,6 @@
             <div class="toggle-row">
                 <label class="toggle"><input type="checkbox" id="show-tc" checked><span class="toggle-track"></span></label>
                 <span>Torque Converter</span>
-            </div>
-            <div class="toggle-row">
-                <label class="toggle"><input type="checkbox" id="show-housing"><span class="toggle-track"></span></label>
-                <span>Housing</span>
             </div>
             <div class="toggle-row">
                 <label class="toggle"><input type="checkbox" id="show-shafts" checked><span class="toggle-track"></span></label>
@@ -113,8 +109,8 @@
         <section class="panel-section">
             <h3>Housing Opacity</h3>
             <div class="slider-row">
-                <input type="range" id="housing-opacity" min="0" max="100" value="18">
-                <span class="slider-val" id="opacity-val">18%</span>
+                <input type="range" id="housing-opacity" min="0" max="100" value="0">
+                <span class="slider-val" id="opacity-val">0%</span>
             </div>
         </section>
 
@@ -129,8 +125,8 @@
         <section class="panel-section">
             <h3>Drum Opacity</h3>
             <div class="slider-row">
-                <input type="range" id="drum-opacity" min="0" max="100" value="40">
-                <span class="slider-val" id="drum-opacity-val">40%</span>
+                <input type="range" id="drum-opacity" min="0" max="100" value="0">
+                <span class="slider-val" id="drum-opacity-val">0%</span>
             </div>
         </section>
 
