@@ -725,73 +725,6 @@ Object.entries(cSpecs).forEach(([name, s]) => {
     parts.clutches[name] = pack;
 });
 
-// ── Clutch connection lines — show what each clutch/brake connects ───────────
-// Brake A: GS1/GS2 sun → housing case
-// Brake B: GS1 ring → housing case
-// Clutch C: input shaft → GS4 sun
-// Clutch D: GS3 carrier → GS4 carrier (output)
-// Clutch E: GS3 sun → GS3 ring (locks GS3)
-
-const connLineMat = new THREE.MeshStandardMaterial({
-    color: 0xcc5520, metalness: 0, roughness: 1,
-    transparent: true, opacity: 0.6, depthWrite: false,
-});
-const connLineBrakeMat = new THREE.MeshStandardMaterial({
-    color: 0x888888, metalness: 0, roughness: 1,
-    transparent: true, opacity: 0.5, depthWrite: false,
-});
-
-function addConnection(from, to, isBrake) {
-    const start = new THREE.Vector3(...from);
-    const end = new THREE.Vector3(...to);
-    const curve = new THREE.LineCurve3(start, end);
-    const geo = new THREE.TubeGeometry(curve, 1, 0.03, 6, false);
-    const line = new THREE.Mesh(geo, isBrake ? connLineBrakeMat.clone() : connLineMat.clone());
-    line.userData.isConnLine = true;
-    clutchGrp.add(line);
-    return line;
-}
-
-parts.connLines = {};
-
-// Brake A connects to GS1 sun & GS2 sun on one side, case (y offset up) on other
-const aX = cSpecs.A.x;
-parts.connLines.A = [
-    addConnection([aX, 0.5, 0], [gsX[0], 0.5, 0], true),    // → GS1 sun area
-    addConnection([aX, -0.5, 0], [gsX[1], -0.5, 0], true),   // → GS2 sun area
-    addConnection([aX, 0, 0.6], [aX, 0, 3.5], true), // → case (grounded)
-];
-
-// Brake B connects GS1 ring to case
-const bX = cSpecs.B.x;
-const bR = cSpecs.B.or;
-parts.connLines.B = [
-    addConnection([bX, bR + 0.1, 0], [bX, 3.5, 0], true), // → case
-];
-
-// Clutch C connects input shaft to GS4 sun
-const cX = cSpecs.C.x;
-parts.connLines.C = [
-    addConnection([cX - 0.3, 0, 0], [gsX[1], 0, 0], false),   // from input shaft
-    addConnection([cX + 0.3, 0, 0], [gsX[3], 0, 0], false),   // to GS4 sun
-];
-
-// Clutch D connects GS3 carrier to output (GS4 carrier)
-const dX = cSpecs.D.x;
-parts.connLines.D = [
-    addConnection([dX - 0.3, 0, 0], [gsX[2], 0, 0], false),   // from GS3 carrier
-    addConnection([dX + 0.3, 0, 0], [gsX[3] + 1, 0, 0], false), // to output
-];
-
-// Clutch E connects GS3 sun to GS3 ring (locks them together)
-const eX = cSpecs.E.x;
-const gs3SunR = GS_SPEC[2].sun * M / 2;
-const gs3RingR = GS_SPEC[2].ring * M / 2;
-parts.connLines.E = [
-    addConnection([eX, gs3SunR + 0.1, 0], [eX, (gs3SunR + gs3RingR) / 2, 0], false),   // sun side
-    addConnection([eX, (gs3SunR + gs3RingR) / 2, 0], [eX, gs3RingR - 0.1, 0], false),   // ring side
-];
-
 // ── Torque Converter (Hydrotransformator) ────────────────────────────────────
 
 const tcGroup = new THREE.Group();
@@ -1252,18 +1185,6 @@ function setGear(gear) {
         }
     });
 
-    // Connection lines — engaged = visible orange, disengaged = invisible
-    ['A','B','C','D','E'].forEach(el => {
-        const on = d.engaged.includes(el);
-        const lines = parts.connLines[el];
-        if (!lines) return;
-        lines.forEach(line => {
-            line.material.opacity = on ? 0.8 : 0.0;
-            line.material.color.setHex(on ? 0xdd5520 : 0x999999);
-            line.material.needsUpdate = true;
-            line.visible = on;
-        });
-    });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
