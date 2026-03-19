@@ -1153,6 +1153,122 @@ function colorForSpeed(speed, colorMap) {
     return 0xcccccc;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// TORQUE PATH DESCRIPTIONS
+// ─────────────────────────────────────────────────────────────────────────────
+
+const ELEMENT_INFO = {
+    A: { name: 'Brake A', type: 'brake' },
+    B: { name: 'Brake B', type: 'brake' },
+    C: { name: 'Clutch C', type: 'clutch' },
+    D: { name: 'Clutch D', type: 'clutch' },
+    E: { name: 'Clutch E', type: 'clutch' },
+};
+
+const TORQUE_PATHS = {
+    'R': {
+        elements: {
+            A: 'Locks sun shaft — GS1/GS2 sun held stationary',
+            B: 'Locks GS1 ring — GS1 fully grounded to case',
+            D: 'Connects GS3 carrier to output shaft',
+        },
+        path: 'Input → GS2 carrier → GS2 planets → GS2 ring → GS3 sun → GS3 planets → GS3 carrier → Output (reversed)',
+    },
+    '1': {
+        elements: {
+            A: 'Locks sun shaft — GS1/GS2 sun held stationary',
+            B: 'Locks GS1 ring — GS1 fully locked, so GS4 ring = 0',
+            C: 'Connects input shaft directly to GS4 sun',
+        },
+        path: 'Input → C → GS4 sun; GS4 ring = 0 (via locked GS1) → GS4 provides maximum reduction → Output',
+    },
+    '2': {
+        elements: {
+            A: 'Locks sun shaft — GS1/GS2 sun held stationary',
+            B: 'Locks GS1 ring — GS1 fully locked, GS4 ring = 0',
+            E: 'Locks GS3 — sun, ring, carrier all rotate together',
+        },
+        path: 'Input → GS2 carrier → GS2 ring → GS3 (locked) → GS4 sun; GS4 ring = 0 → GS4 reduces → Output',
+    },
+    '3': {
+        elements: {
+            B: 'Locks GS1 ring — provides reaction torque',
+            C: 'Connects input to GS4 sun at input speed',
+            E: 'Locks GS3 — all GS3 parts at same speed',
+        },
+        path: 'Input → C → GS4 sun; Input → GS2 → GS3 (locked) → also GS4 sun; GS1 ring braked → Output',
+    },
+    '4': {
+        elements: {
+            B: 'Locks GS1 ring — provides reaction torque',
+            C: 'Connects input to GS4 sun at input speed',
+            D: 'Connects GS3 carrier to output shaft',
+        },
+        path: 'Input → C → GS4 sun; Input → GS2 → GS3 carrier → Output via D; two parallel paths merge',
+    },
+    '5': {
+        elements: {
+            C: 'Connects input to GS4 sun at input speed',
+            D: 'Connects GS3 carrier to output shaft',
+            E: 'Locks GS3 — all of GS3 rotates as one unit',
+        },
+        path: 'Input → C → GS4 sun → GS3 ring; GS3 locked → GS3 carrier → Output via D; mild overdrive',
+    },
+    '6': {
+        elements: {
+            B: 'Locks GS1 ring — provides reaction torque',
+            D: 'Connects GS3 carrier to output shaft',
+            E: 'Locks GS3 — direct path through GS3',
+        },
+        path: 'Input → GS2 carrier → GS2 ring → GS3 (locked) → GS3 carrier → Output via D; 1:1 direct drive',
+    },
+    '7': {
+        elements: {
+            A: 'Locks sun shaft — GS2 sun = 0, overdrive in GS2',
+            D: 'Connects GS3 carrier to output shaft',
+            E: 'Locks GS3 — direct path through GS3',
+        },
+        path: 'Input → GS2 carrier (sun = 0) → GS2 ring speeds up → GS3 (locked) → Output via D; overdrive',
+    },
+    '8': {
+        elements: {
+            A: 'Locks sun shaft — GS2 sun = 0, overdrive in GS2',
+            C: 'Connects input to GS4 sun at input speed',
+            D: 'Connects GS3 carrier to output shaft',
+        },
+        path: 'Input → C → GS4 sun; Input → GS2 (sun = 0) → GS3 → Output via D; maximum overdrive',
+    },
+};
+
+function updateTorquePanel(gear) {
+    const container = document.getElementById('torque-path');
+    const tp = TORQUE_PATHS[gear];
+    const engaged = GEAR_DATA[gear].engaged;
+
+    let html = '';
+    // Show all 5 elements, engaged ones first
+    ['A','B','C','D','E'].forEach(el => {
+        const on = engaged.includes(el);
+        const info = ELEMENT_INFO[el];
+        const desc = on ? tp.elements[el] : (info.type === 'brake' ? 'Open — not braking' : 'Open — not transmitting');
+        html += `<div class="tp-step">
+            <span class="tp-badge ${on ? 'engaged' : 'open'}">${el}</span>
+            <div class="tp-text">
+                <div class="tp-name">${info.name} — ${on ? 'Engaged' : 'Open'}</div>
+                <div class="tp-desc">${desc}</div>
+            </div>
+        </div>`;
+    });
+
+    // Torque path summary
+    html += `<div class="tp-path">
+        <div class="tp-path-label">Torque Path</div>
+        ${tp.path}
+    </div>`;
+
+    container.innerHTML = html;
+}
+
 function setGear(gear) {
     currentGear = gear;
     targetSpeeds = solveSpeeds(gear);
@@ -1162,6 +1278,7 @@ function setGear(gear) {
     document.querySelectorAll('.gear-btn').forEach(b => b.classList.toggle('active', b.dataset.gear === gear));
     document.getElementById('current-gear').textContent = d.name;
     document.getElementById('current-ratio').textContent = d.ratio.toFixed(3);
+    updateTorquePanel(gear);
     document.querySelectorAll('.el-card').forEach(card => {
         card.classList.toggle('engaged', d.engaged.includes(card.dataset.el));
     });
