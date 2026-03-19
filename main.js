@@ -64,8 +64,7 @@ camera.position.set(4, 8, 18);
 const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
 renderer.setSize(innerWidth, innerHeight);
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
-renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.shadowMap.enabled = false;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.3;
 renderer.sortObjects = true;  // ensure transparent objects are sorted by distance
@@ -77,11 +76,33 @@ controls.dampingFactor = 0.06;
 controls.target.set(0, 0, 0);
 controls.minDistance = 3;
 controls.maxDistance = 80;
-// Unrestricted rotation
-controls.minPolarAngle = 0;
-controls.maxPolarAngle = Math.PI;
+controls.enableRotate = false; // rotation handled by modelPivot drag
 controls.enablePan = true;
 controls.zoomToCursor = true;
+
+// Turntable drag — rotate modelPivot, floor stays fixed
+{
+    let dragging = false, prevX = 0, prevY = 0;
+    const canvas = renderer.domElement;
+    canvas.addEventListener('pointerdown', e => {
+        if (e.button !== 0) return; // left button only
+        // Don't start drag if clicking on UI
+        if (e.target !== canvas) return;
+        dragging = true;
+        prevX = e.clientX;
+        prevY = e.clientY;
+    });
+    window.addEventListener('pointermove', e => {
+        if (!dragging) return;
+        const dx = e.clientX - prevX;
+        const dy = e.clientY - prevY;
+        prevX = e.clientX;
+        prevY = e.clientY;
+        modelPivot.rotation.y += dx * 0.005;
+        modelPivot.rotation.z += dy * 0.005;
+    });
+    window.addEventListener('pointerup', () => { dragging = false; });
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // LIGHTING — soft, technical, from all angles
@@ -91,11 +112,6 @@ scene.add(new THREE.HemisphereLight(0xdddcda, 0x88857e, 0.7));
 
 const key = new THREE.DirectionalLight(0xfffaf0, 1.6);
 key.position.set(10, 18, 14);
-key.castShadow = true;
-key.shadow.mapSize.set(2048, 2048);
-key.shadow.camera.left = -20; key.shadow.camera.right = 20;
-key.shadow.camera.top = 20; key.shadow.camera.bottom = -20;
-key.shadow.bias = -0.0004;
 scene.add(key);
 
 const fill = new THREE.DirectionalLight(0xd0d8e8, 0.5);
@@ -106,14 +122,43 @@ const back = new THREE.DirectionalLight(0xffe8d0, 0.3);
 back.position.set(-4, -8, 12);
 scene.add(back);
 
-// Subtle ground plane for shadow catching
-const groundGeo = new THREE.PlaneGeometry(60, 60);
-const groundMat = new THREE.ShadowMaterial({ opacity: 0.08 });
-const ground = new THREE.Mesh(groundGeo, groundMat);
-ground.rotation.x = -Math.PI / 2;
-ground.position.y = -5;
-ground.receiveShadow = true;
-scene.add(ground);
+// ── Floor + shadow ───────────────────────────────────────────────────────────
+// Large visible floor plane beneath the gearbox so it looks like it sits on a surface.
+const FLOOR_Y = -5;
+const floorGeo = new THREE.PlaneGeometry(200, 200);
+const floorMat = new THREE.MeshBasicMaterial({ color: 0xf0efed });
+const floor = new THREE.Mesh(floorGeo, floorMat);
+floor.rotation.x = -Math.PI / 2;
+floor.position.y = FLOOR_Y;
+floor.renderOrder = -2;
+scene.add(floor);
+
+// Dark concentrated shadow on the floor
+{
+    const sz = 512;
+    const c = document.createElement('canvas');
+    c.width = sz; c.height = sz;
+    const ctx = c.getContext('2d');
+    const g = ctx.createRadialGradient(sz/2, sz/2, 0, sz/2, sz/2, sz * 0.42);
+    g.addColorStop(0, 'rgba(0,0,0,0.80)');
+    g.addColorStop(0.2, 'rgba(0,0,0,0.55)');
+    g.addColorStop(0.45, 'rgba(0,0,0,0.30)');
+    g.addColorStop(0.7, 'rgba(0,0,0,0.10)');
+    g.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, sz, sz);
+    const tex = new THREE.CanvasTexture(c);
+    const blobGeo = new THREE.PlaneGeometry(24, 12);
+    const blobMat = new THREE.MeshBasicMaterial({
+        map: tex, transparent: true, depthWrite: false,
+        polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1,
+    });
+    const blob = new THREE.Mesh(blobGeo, blobMat);
+    blob.rotation.x = -Math.PI / 2;
+    blob.position.y = FLOOR_Y + 0.01;
+    blob.renderOrder = -1;
+    scene.add(blob);
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // POST-PROCESSING — SAO for ambient occlusion
@@ -512,8 +557,10 @@ function mat(color, opts = {}) {
 // BUILD TRANSMISSION — axis along X, engine side = -X, output = +X
 // ─────────────────────────────────────────────────────────────────────────────
 
+const modelPivot = new THREE.Group();
+scene.add(modelPivot);
 const root = new THREE.Group();
-scene.add(root);
+modelPivot.add(root);
 
 const housingGrp = new THREE.Group();
 housingGrp.visible = false;
@@ -783,7 +830,9 @@ const tcX = gsX[0] - FW * 2.2; // engine side of GS1
 const tcR = 1.8;
 const tcWidth = 1.2;
 
-// Impeller (engine side) — donut shape
+// Impeller (engine side) — donut shape + vane group
+const impellerGrp = new THREE.Group();
+impellerGrp.position.x = tcX - tcWidth * 0.2;
 const impellerGeo = new THREE.TorusGeometry(tcR * 0.6, tcR * 0.35, 16, 32);
 impellerGeo.rotateY(Math.PI / 2);
 const impellerMat = new THREE.MeshStandardMaterial({
@@ -791,10 +840,12 @@ const impellerMat = new THREE.MeshStandardMaterial({
     transparent: true, opacity: 0.75, depthWrite: false, side: THREE.DoubleSide,
 });
 const impeller = new THREE.Mesh(impellerGeo, impellerMat);
-impeller.position.x = tcX - tcWidth * 0.2;
-tcGroup.add(impeller);
+impellerGrp.add(impeller);
+tcGroup.add(impellerGrp);
 
-// Turbine (transmission side) — slightly smaller donut
+// Turbine (transmission side) — slightly smaller donut + vane group
+const turbineGrp = new THREE.Group();
+turbineGrp.position.x = tcX + tcWidth * 0.2;
 const turbineGeo = new THREE.TorusGeometry(tcR * 0.55, tcR * 0.3, 16, 32);
 turbineGeo.rotateY(Math.PI / 2);
 const turbineMat = new THREE.MeshStandardMaterial({
@@ -802,18 +853,58 @@ const turbineMat = new THREE.MeshStandardMaterial({
     transparent: true, opacity: 0.75, depthWrite: false, side: THREE.DoubleSide,
 });
 const turbine = new THREE.Mesh(turbineGeo, turbineMat);
-turbine.position.x = tcX + tcWidth * 0.2;
-tcGroup.add(turbine);
+turbineGrp.add(turbine);
+tcGroup.add(turbineGrp);
 
-// Stator (center)
+// Stator (center) — with one-way clutch hub
 const statorGeo = new THREE.TorusGeometry(tcR * 0.3, tcR * 0.12, 12, 24);
 statorGeo.rotateY(Math.PI / 2);
 const statorMat = new THREE.MeshStandardMaterial({
     color: 0x888888, metalness: 0.05, roughness: 0.9,
 });
 const stator = new THREE.Mesh(statorGeo, statorMat);
-stator.position.x = tcX;
-tcGroup.add(stator);
+
+// One-way clutch hub (inner ring of stator)
+const owcGeo = new THREE.CylinderGeometry(tcR * 0.15, tcR * 0.15, 0.3, 20, 1, true);
+owcGeo.rotateZ(Math.PI / 2);
+const owcMat = new THREE.MeshStandardMaterial({
+    color: 0x777777, metalness: 0.2, roughness: 0.7, side: THREE.DoubleSide,
+});
+const owc = new THREE.Mesh(owcGeo, owcMat);
+
+// Interior vanes — radial blades inside impeller, turbine, and stator
+function addTCVanes(parent, majorR, minorR, color, count) {
+    const vaneMat = new THREE.MeshStandardMaterial({
+        color, metalness: 0.15, roughness: 0.7,
+        transparent: true, opacity: 0.85, depthWrite: false, side: THREE.DoubleSide,
+    });
+    const vaneH = minorR * 1.6;
+    const vaneW = minorR * 0.7;
+    const vGeo = new THREE.PlaneGeometry(vaneW, vaneH);
+    for (let i = 0; i < count; i++) {
+        const angle = (i / count) * Math.PI * 2;
+        const vane = new THREE.Mesh(vGeo, vaneMat);
+        // Position at torus center ring (local coords, group holds x offset)
+        const ry = Math.cos(angle) * majorR;
+        const rz = Math.sin(angle) * majorR;
+        vane.position.set(0, ry, rz);
+        // Orient radially: face toward axis, with slight twist for blade curve
+        vane.lookAt(0, 0, 0);
+        vane.rotateY(Math.PI * 0.17);
+        parent.add(vane);
+    }
+}
+
+addTCVanes(impellerGrp, tcR * 0.6, tcR * 0.35, 0xdd9944, 24);
+addTCVanes(turbineGrp, tcR * 0.55, tcR * 0.3, 0x99bb66, 24);
+
+// Stator group — stator torus + one-way clutch + vanes (static)
+const statorGrp = new THREE.Group();
+statorGrp.position.x = tcX;
+statorGrp.add(stator);
+statorGrp.add(owc);
+addTCVanes(statorGrp, tcR * 0.3, tcR * 0.12, 0x999999, 16);
+tcGroup.add(statorGrp);
 
 // TC outer shell (two half-domes)
 const tcShellGeo = new THREE.SphereGeometry(tcR, 24, 16, 0, Math.PI * 2, 0, Math.PI / 2);
@@ -845,9 +936,10 @@ tcGroup.add(lockup);
 // Label
 tcGroup.add(makeLabel('TC', new THREE.Vector3(tcX, tcR + 0.5, 0), { fontSize: 26, color: '#666' }));
 
-gearGrp.add(tcGroup);
-parts.tcImpeller = impeller;
-parts.tcTurbine = turbine;
+modelPivot.add(tcGroup);
+parts.tcGroup = tcGroup;
+parts.tcImpeller = impellerGrp;
+parts.tcTurbine = turbineGrp;
 
 // ── Housing ──────────────────────────────────────────────────────────────────
 
@@ -1565,6 +1657,10 @@ function animate() {
     });
 
     controls.update();
+
+    // Sync flow arrows rotation with model pivot
+    flowGroup.rotation.copy(modelPivot.rotation);
+
     composer.render();
 
     // Render flow arrows on top — clear only depth, keep color from composer
@@ -1583,7 +1679,7 @@ const STORAGE_KEY = 'zf8hp_settings';
 function saveSettings() {
     const s = {};
     // Toggles
-    ['show-housing','show-shafts','show-gears','show-gs1','show-gs2','show-gs3','show-gs4',
+    ['show-tc','show-housing','show-shafts','show-gears','show-gs1','show-gs2','show-gs3','show-gs4',
      'show-clutches','show-flow'].forEach(id => {
         s[id] = document.getElementById(id).checked;
     });
@@ -1602,7 +1698,7 @@ function loadSettings() {
     if (!s) return;
 
     // Toggles — set checkbox and fire change event
-    ['show-housing','show-shafts','show-gears','show-gs1','show-gs2','show-gs3','show-gs4',
+    ['show-tc','show-housing','show-shafts','show-gears','show-gs1','show-gs2','show-gs3','show-gs4',
      'show-clutches','show-flow'].forEach(id => {
         if (s[id] !== undefined) {
             const el = document.getElementById(id);
@@ -1630,6 +1726,7 @@ function loadSettings() {
 document.querySelectorAll('.gear-btn').forEach(b =>
     b.addEventListener('click', () => { setGear(b.dataset.gear); saveSettings(); }));
 
+document.getElementById('show-tc').addEventListener('change', e => { tcGroup.visible = e.target.checked; saveSettings(); });
 document.getElementById('show-housing').addEventListener('change', e => { housingGrp.visible = e.target.checked; saveSettings(); });
 document.getElementById('show-shafts').addEventListener('change', e => { shaftGrp.visible = e.target.checked; saveSettings(); });
 document.getElementById('show-gears').addEventListener('change', e => { gearGrp.visible = e.target.checked; saveSettings(); });
