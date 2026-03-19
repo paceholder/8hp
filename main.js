@@ -428,7 +428,7 @@ function makeClutchPack(ir, or, length, nDiscs) {
     const stripeMat = new THREE.MeshStandardMaterial({
         color: 0x444444, metalness: 0, roughness: 1, side: THREE.DoubleSide,
     });
-    stripeMat.userData = { isSteel: true, isDrum: false };
+    stripeMat.userData = { isStripe: true };
 
     for (let i = 0; i < nDiscs; i++) {
         const x = -length / 2 + gap * (i + 1);
@@ -451,8 +451,10 @@ function makeClutchPack(ir, or, length, nDiscs) {
         for (let s = 0; s < nStripes; s++) {
             const a = (s / nStripes) * Math.PI * 2;
             const midR = (ir + or) / 2;
-            const stripeGeo = new THREE.BoxGeometry(0.005, stripeW, stripeD);
-            const stripe = new THREE.Mesh(stripeGeo, stripeMat);
+            const stripeGeo = new THREE.BoxGeometry(0.015, stripeW, stripeD);
+            const sMat = stripeMat.clone();
+            sMat.userData = { isStripe: true };
+            const stripe = new THREE.Mesh(stripeGeo, sMat);
             stripe.position.set(x, Math.cos(a) * midR, Math.sin(a) * midR);
             stripe.rotation.x = a;
             g.add(stripe);
@@ -1231,7 +1233,14 @@ function setGear(gear) {
         grp.traverse(ch => {
             if (!ch.isMesh) return;
             const m = ch.material;
-            if (m.userData?.isDrum) {
+            if (m.userData?.isStripe) {
+                // Stripes: contrasting dark mark, visible when engaged
+                m.color.setHex(on ? 0x331100 : 0x666666);
+                m.opacity = on ? 0.95 : 0.06;
+                m.transparent = !on;
+                m.depthWrite = on;
+                m.needsUpdate = true;
+            } else if (m.userData?.isDrum) {
                 setM(m,
                     on ? PAL.drumOn : 0xbbbbbb,
                     on ? 0.65 : 0.04,
