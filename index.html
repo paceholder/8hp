@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ZF 8HP Transmission — Interactive Cutaway</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Instrument+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="canvas-container"></div>
+
+    <!-- Top bar -->
+    <header id="topbar">
+        <div class="logo">
+            <span class="logo-mark">ZF</span>
+            <span class="logo-text">8HP Transmission</span>
+        </div>
+        <div class="topbar-right">
+            <span class="tag">Interactive Cutaway</span>
+            <span class="tag tag-muted">4 Planetary Sets · 5 Shift Elements</span>
+        </div>
+    </header>
+
+    <!-- Gear selector strip -->
+    <nav id="gear-strip">
+        <button data-gear="R" class="gear-btn">R</button>
+        <div class="gear-divider"></div>
+        <button data-gear="1" class="gear-btn active">1</button>
+        <button data-gear="2" class="gear-btn">2</button>
+        <button data-gear="3" class="gear-btn">3</button>
+        <button data-gear="4" class="gear-btn">4</button>
+        <button data-gear="5" class="gear-btn">5</button>
+        <button data-gear="6" class="gear-btn">6</button>
+        <button data-gear="7" class="gear-btn">7</button>
+        <button data-gear="8" class="gear-btn">8</button>
+    </nav>
+
+    <!-- Ratio bar -->
+    <div id="ratio-bar">
+        <div class="ratio-item">
+            <span class="ratio-label">Gear</span>
+            <span class="ratio-value" id="current-gear">1st</span>
+        </div>
+        <div class="ratio-sep"></div>
+        <div class="ratio-item">
+            <span class="ratio-label">Ratio</span>
+            <span class="ratio-value" id="current-ratio">4.696</span>
+        </div>
+        <div class="ratio-sep"></div>
+        <div class="ratio-item">
+            <span class="ratio-label">Spread</span>
+            <span class="ratio-value">7.05</span>
+        </div>
+    </div>
+
+    <!-- Side panel -->
+    <aside id="panel">
+        <section class="panel-section">
+            <h3>Shift Elements</h3>
+            <div id="elements-grid">
+                <div class="el-card" data-el="A">
+                    <div class="el-indicator"></div>
+                    <div class="el-info">
+                        <span class="el-name">Brake A</span>
+                        <span class="el-desc">GS1/GS2 Sun → Case</span>
+                    </div>
+                </div>
+                <div class="el-card" data-el="B">
+                    <div class="el-indicator"></div>
+                    <div class="el-info">
+                        <span class="el-name">Brake B</span>
+                        <span class="el-desc">GS1 Ring → Case</span>
+                    </div>
+                </div>
+                <div class="el-card" data-el="C">
+                    <div class="el-indicator"></div>
+                    <div class="el-info">
+                        <span class="el-name">Clutch C</span>
+                        <span class="el-desc">Input → GS4 Sun</span>
+                    </div>
+                </div>
+                <div class="el-card" data-el="D">
+                    <div class="el-indicator"></div>
+                    <div class="el-info">
+                        <span class="el-name">Clutch D</span>
+                        <span class="el-desc">GS3 Carrier → Output</span>
+                    </div>
+                </div>
+                <div class="el-card" data-el="E">
+                    <div class="el-indicator"></div>
+                    <div class="el-info">
+                        <span class="el-name">Clutch E</span>
+                        <span class="el-desc">Lock GS3</span>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="panel-section">
+            <h3>Visibility</h3>
+            <div class="toggle-row">
+                <label class="toggle"><input type="checkbox" id="show-housing" checked><span class="toggle-track"></span></label>
+                <span>Housing</span>
+            </div>
+            <div class="toggle-row">
+                <label class="toggle"><input type="checkbox" id="show-shafts" checked><span class="toggle-track"></span></label>
+                <span>Shafts</span>
+            </div>
+            <div class="toggle-row">
+                <label class="toggle"><input type="checkbox" id="show-gears" checked><span class="toggle-track"></span></label>
+                <span>Gear Sets</span>
+            </div>
+            <div class="toggle-row">
+                <label class="toggle"><input type="checkbox" id="show-clutches" checked><span class="toggle-track"></span></label>
+                <span>Clutches &amp; Brakes</span>
+            </div>
+            <div class="toggle-row">
+                <label class="toggle"><input type="checkbox" id="show-flow" checked><span class="toggle-track"></span></label>
+                <span>Power Flow Arrows</span>
+            </div>
+        </section>
+
+        <section class="panel-section">
+            <h3>Housing Opacity</h3>
+            <div class="slider-row">
+                <input type="range" id="housing-opacity" min="0" max="100" value="18">
+                <span class="slider-val" id="opacity-val">18%</span>
+            </div>
+        </section>
+
+        <section class="panel-section">
+            <h3>Drum Opacity</h3>
+            <div class="slider-row">
+                <input type="range" id="drum-opacity" min="0" max="100" value="40">
+                <span class="slider-val" id="drum-opacity-val">40%</span>
+            </div>
+        </section>
+
+        <section class="panel-section">
+            <h3>Speed</h3>
+            <div class="slider-row">
+                <input type="range" id="anim-speed" min="0" max="300" value="150">
+                <span class="slider-val" id="speed-val">150%</span>
+            </div>
+        </section>
+    </aside>
+
+    <!-- Keyboard hint -->
+    <div id="hint">
+        <kbd>1</kbd>–<kbd>8</kbd> gears · <kbd>R</kbd> reverse · scroll to zoom · drag to orbit
+    </div>
+
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://cdn.jsdelivr.net/npm/three@0.164.1/build/three.module.js",
+            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.164.1/examples/jsm/"
+        }
+    }
+    </script>
+    <script type="module" src="main.js"></script>
+</body>
+</html>
