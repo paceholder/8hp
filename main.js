@@ -1427,9 +1427,15 @@ document.getElementById('drum-opacity').addEventListener('input', e => {
     const v = e.target.value / 100;
     document.getElementById('drum-opacity-val').textContent = `${e.target.value}%`;
     parts.drums.forEach(d => {
-        if (d.type === 'drum' && d.drumMat) {
-            d.drumMat.opacity = v;
-            d.drumMat.needsUpdate = true;
+        if (d.type === 'drum' && d.group) {
+            d.group.traverse(ch => {
+                if (!ch.isMesh) return;
+                ch.material.opacity = v;
+                ch.material.transparent = v < 0.99;
+                ch.material.depthWrite = v >= 0.99;
+                ch.material.needsUpdate = true;
+                ch.visible = v > 0.01;
+            });
         }
     });
 });
