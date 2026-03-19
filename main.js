@@ -667,17 +667,6 @@ function addDrum(innerR, outerR, xStart, xEnd, color, labelText) {
         grp.add(stripe);
     }
 
-    // End flanges
-    const halfLen = len / 2;
-    [-halfLen, halfLen].forEach(xOff => {
-        const flangeGeo = new THREE.RingGeometry(innerR, outerR, 32);
-        const flange = new THREE.Mesh(flangeGeo, drumMat.clone());
-        flange.rotation.y = Math.PI / 2;
-        flange.position.x = xOff;
-        flange.material.opacity = 0.5;
-        grp.add(flange);
-    });
-
     gearGrp.add(grp);
     return { group: grp, drumMat, innerR, outerR, xMid, len };
 }
