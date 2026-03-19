@@ -1309,7 +1309,7 @@ function animate() {
 
     for (const k in targetSpeeds) curSpeeds[k] = curSpeeds[k] + (targetSpeeds[k] - curSpeeds[k]) * lf;
 
-    const V = animSpeed * 2.0;
+    const V = animSpeed * 0.8;
 
     // Suns
     parts.suns.forEach(({ mesh, idx }) => {
