@@ -831,6 +831,21 @@ Object.entries(cSpecs).forEach(([name, s]) => {
     parts.clutches[name] = pack;
 });
 
+// ── Clutch labels — show what each clutch connects in the 3D view
+const CLUTCH_LABELS = {
+    A: 'A: Sun↔Case',
+    B: 'B: Ring↔Case',
+    C: 'C: Input↔GS4',
+    D: 'D: GS3↔Output',
+    E: 'E: GS3s↔GS3r',
+};
+Object.entries(CLUTCH_LABELS).forEach(([name, text]) => {
+    const s = cSpecs[name];
+    const y = s.or + 0.35;
+    clutchGrp.add(makeLabel(text, new THREE.Vector3(s.x, y, 0), { fontSize: 18, color: '#c44b1a' }));
+});
+
+
 // ── Torque Converter (Hydrotransformator) ────────────────────────────────────
 
 const tcGroup = new THREE.Group();
