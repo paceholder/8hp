@@ -482,6 +482,7 @@ const root = new THREE.Group();
 scene.add(root);
 
 const housingGrp = new THREE.Group();
+housingGrp.visible = false;
 const shaftGrp = new THREE.Group();
 const gearGrp = new THREE.Group();
 const clutchGrp = new THREE.Group();
@@ -989,7 +990,7 @@ function solveSpeeds(gear) {
 let currentGear = '1';
 let targetSpeeds = solveSpeeds('1');
 let curSpeeds = { ...targetSpeeds };
-let animSpeed = 1.5;
+let animSpeed = 1.0;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // POWER FLOW ARROWS — animated dashed tubes showing torque path
