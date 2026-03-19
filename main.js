@@ -146,70 +146,73 @@ function involutePoint(rb, t) {
 }
 
 /**
- * Create a detailed external spur gear profile.
+ * Create a detailed external spur gear profile using correct involute math.
  * Returns an ExtrudeGeometry along X axis.
  */
 function makeExternalGear(module, teeth, faceWidth, boreR) {
     const m = module;
     const z = teeth;
     const rp = (m * z) / 2;           // pitch radius
-    const ra = rp + m;                 // addendum
-    const rd = rp - 1.25 * m;         // dedendum
-    const rb = rp * Math.cos(20 * Math.PI / 180); // base circle
-    const shape = new THREE.Shape();
+    const ra = rp + m;                 // addendum (tip)
+    const rd = rp - 1.25 * m;         // dedendum (root)
+    const phi = 20 * Math.PI / 180;   // pressure angle
+    const rb = rp * Math.cos(phi);    // base circle
 
-    const ptsPerTooth = 12;
+    // Involute function: inv(α) = tan(α) - α
+    function inv(alpha) { return Math.tan(alpha) - alpha; }
+
+    // Angular half-tooth-thickness at any radius r
+    // At pitch circle this equals π/(2z); follows involute outward, radial line inward
+    const halfThickPitch = Math.PI / (2 * z);
+    const invPhi = inv(phi);
+
+    function halfThickAt(r) {
+        if (r <= rb) return halfThickPitch + invPhi; // straight radial below base circle
+        const alpha = Math.acos(rb / r);
+        return halfThickPitch + invPhi - inv(alpha);
+    }
+
+    const shape = new THREE.Shape();
+    const ptsPerFlank = 14;
     const toothAngle = (2 * Math.PI) / z;
 
-    // Tooth width at pitch circle (half)
-    const halfToothPitch = toothAngle / 4;
-
     for (let i = 0; i < z; i++) {
-        const startA = i * toothAngle;
-        // Dedendum start
-        const dA = startA - halfToothPitch * 0.9;
+        const tc = i * toothAngle; // tooth center angle
 
-        // Build involute flank going up
-        for (let j = 0; j <= ptsPerTooth; j++) {
-            const frac = j / ptsPerTooth;
-            // Blend from dedendum to addendum
+        // Left flank: root → tip
+        for (let j = 0; j <= ptsPerFlank; j++) {
+            const frac = j / ptsPerFlank;
             const r = rd + (ra - rd) * frac;
-            // Involute angle offset
-            const invA = Math.sqrt(Math.max(0, (r / rb) * (r / rb) - 1));
-            const baseA = Math.acos(Math.min(1, rb / Math.max(r, rb + 0.001)));
-            const angle = startA - halfToothPitch + baseA * 0.7 * frac;
+            const angle = tc - halfThickAt(r);
             const y = Math.cos(angle) * r;
             const zz = Math.sin(angle) * r;
             if (i === 0 && j === 0) shape.moveTo(y, zz);
             else shape.lineTo(y, zz);
         }
 
-        // Tooth tip arc
-        const tipA1 = startA - halfToothPitch * 0.15;
-        const tipA2 = startA + halfToothPitch * 0.15;
-        shape.lineTo(Math.cos(tipA1) * ra, Math.sin(tipA1) * ra);
-        shape.lineTo(Math.cos(tipA2) * ra, Math.sin(tipA2) * ra);
+        // Tip arc
+        const htTip = halfThickAt(ra);
+        const tipSteps = 3;
+        for (let s = 1; s <= tipSteps; s++) {
+            const a = tc - htTip + 2 * htTip * (s / tipSteps);
+            shape.lineTo(Math.cos(a) * ra, Math.sin(a) * ra);
+        }
 
-        // Involute flank going down
-        for (let j = ptsPerTooth; j >= 0; j--) {
-            const frac = j / ptsPerTooth;
+        // Right flank: tip → root
+        for (let j = ptsPerFlank; j >= 0; j--) {
+            const frac = j / ptsPerFlank;
             const r = rd + (ra - rd) * frac;
-            const baseA = Math.acos(Math.min(1, rb / Math.max(r, rb + 0.001)));
-            const angle = startA + halfToothPitch - baseA * 0.7 * frac;
-            const y = Math.cos(angle) * r;
-            const zz = Math.sin(angle) * r;
-            shape.lineTo(y, zz);
+            const angle = tc + halfThickAt(r);
+            shape.lineTo(Math.cos(angle) * r, Math.sin(angle) * r);
         }
 
         // Root arc to next tooth
-        const rootA1 = startA + halfToothPitch * 0.9;
-        const rootA2 = startA + toothAngle - halfToothPitch * 0.9;
-        shape.lineTo(Math.cos(rootA1) * rd, Math.sin(rootA1) * rd);
+        const rootEnd = tc + halfThickAt(rd);
         if (i < z - 1) {
-            // Small arc along dedendum to next tooth
+            const nextRootStart = (i + 1) * toothAngle - halfThickAt(rd);
             const steps = 4;
             for (let s = 1; s <= steps; s++) {
-                const a = rootA1 + (rootA2 - rootA1) * (s / steps);
+                const a = rootEnd + (nextRootStart - rootEnd) * (s / steps);
                 shape.lineTo(Math.cos(a) * rd, Math.sin(a) * rd);
             }
         }
@@ -236,14 +239,28 @@ function makeExternalGear(module, teeth, faceWidth, boreR) {
 }
 
 /**
- * Internal (ring) gear: teeth on inside, smooth outside
+ * Internal (ring) gear: teeth on inside, smooth outside.
+ * Uses correct involute math (internal gear formula).
  */
 function makeInternalGear(module, teeth, faceWidth, outerR) {
     const m = module;
     const z = teeth;
     const rp = (m * z) / 2;
-    const ra = rp - m;               // addendum (inside)
-    const rd = rp + 0.8 * m;         // dedendum (inside, towards outer)
+    const ra = rp - m;               // addendum (tip, inward)
+    const rd = rp + 0.8 * m;         // dedendum (root, outward)
+    const phi = 20 * Math.PI / 180;
+    const rb = rp * Math.cos(phi);
+
+    function inv(alpha) { return Math.tan(alpha) - alpha; }
+    const invPhi = inv(phi);
+
+    // Internal gear tooth half-thickness (note sign difference from external)
+    function halfThickAt(r) {
+        if (r <= rb) return Math.PI / (2 * z) - invPhi;
+        const alpha = Math.acos(rb / r);
+        return Math.PI / (2 * z) - invPhi + inv(alpha);
+    }
+
     const shape = new THREE.Shape();
 
     // Outer circle
@@ -258,48 +275,45 @@ function makeInternalGear(module, teeth, faceWidth, outerR) {
     // Inner hole with gear teeth
     const hole = new THREE.Path();
     const toothAngle = (2 * Math.PI) / z;
-    const halfTooth = toothAngle / 4;
-    const ptsPerFlank = 8;
+    const ptsPerFlank = 10;
 
     for (let i = 0; i < z; i++) {
-        const startA = i * toothAngle;
+        const tc = i * toothAngle;
 
-        // Root (outer edge of inner teeth)
-        const rootA = startA - halfTooth * 0.9;
-        if (i === 0) hole.moveTo(Math.cos(rootA) * rd, Math.sin(rootA) * rd);
-        else hole.lineTo(Math.cos(rootA) * rd, Math.sin(rootA) * rd);
-
-        // Flank going to tip (smaller radius = deeper into bore)
+        // Left flank: root (large r) → tip (small r)
         for (let j = 0; j <= ptsPerFlank; j++) {
             const frac = j / ptsPerFlank;
             const r = rd + (ra - rd) * frac;
-            const angle = startA - halfTooth * (1 - frac * 0.85);
-            hole.lineTo(Math.cos(angle) * r, Math.sin(angle) * r);
+            const angle = tc - halfThickAt(r);
+            const y = Math.cos(angle) * r;
+            const zz = Math.sin(angle) * r;
+            if (i === 0 && j === 0) hole.moveTo(y, zz);
+            else hole.lineTo(y, zz);
         }
 
         // Tip arc
-        const tipA1 = startA - halfTooth * 0.15;
-        const tipA2 = startA + halfTooth * 0.15;
-        hole.lineTo(Math.cos(tipA1) * ra, Math.sin(tipA1) * ra);
-        hole.lineTo(Math.cos(tipA2) * ra, Math.sin(tipA2) * ra);
+        const htTip = halfThickAt(ra);
+        const tipSteps = 3;
+        for (let s = 1; s <= tipSteps; s++) {
+            const a = tc - htTip + 2 * htTip * (s / tipSteps);
+            hole.lineTo(Math.cos(a) * ra, Math.sin(a) * ra);
+        }
 
-        // Other flank
+        // Right flank: tip → root
         for (let j = ptsPerFlank; j >= 0; j--) {
             const frac = j / ptsPerFlank;
             const r = rd + (ra - rd) * frac;
-            const angle = startA + halfTooth * (1 - frac * 0.85);
+            const angle = tc + halfThickAt(r);
             hole.lineTo(Math.cos(angle) * r, Math.sin(angle) * r);
         }
 
         // Root arc to next tooth
-        const rootEnd = startA + halfTooth * 0.9;
-        hole.lineTo(Math.cos(rootEnd) * rd, Math.sin(rootEnd) * rd);
-
         if (i < z - 1) {
-            const nextRoot = (i + 1) * toothAngle - halfTooth * 0.9;
+            const rootEnd = tc + halfThickAt(rd);
+            const nextRootStart = (i + 1) * toothAngle - halfThickAt(rd);
             const steps = 3;
             for (let s = 1; s <= steps; s++) {
-                const a = rootEnd + (nextRoot - rootEnd) * (s / steps);
+                const a = rootEnd + (nextRootStart - rootEnd) * (s / steps);
                 hole.lineTo(Math.cos(a) * rd, Math.sin(a) * rd);
             }
         }
