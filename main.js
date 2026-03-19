@@ -402,18 +402,21 @@ function makeCarrier(ir, or, length, nArms, planetOrbitR, planetR) {
         g.add(outer);
     });
 
-    // Radial arms connecting hub to outer ring
-    const armW = 0.06;
-    const armD = outerIr - hubOr;
-    const armGeo = new THREE.BoxGeometry(length * 0.95, armW, armD);
+    // Radial arms connecting hub to outer ring (thin rods at each end plate)
+    const armRadius = 0.022;
+    const armLen = outerIr - hubOr;
+    const armGeo = new THREE.CylinderGeometry(armRadius, armRadius, armLen, 8);
     for (let i = 0; i < nArms; i++) {
         const a = (i / nArms) * Math.PI * 2;
-        const r = (hubOr + outerIr) / 2;
-        const arm = new THREE.Mesh(armGeo, mat);
-        arm.position.set(0, Math.cos(a) * r, Math.sin(a) * r);
-        arm.rotation.x = a;
-        arm.castShadow = true;
-        g.add(arm);
+        const midR = (hubOr + outerIr) / 2;
+        for (const xOff of [length * 0.45, -length * 0.45]) {
+            const arm = new THREE.Mesh(armGeo, mat);
+            arm.position.set(xOff, Math.cos(a) * midR, Math.sin(a) * midR);
+            // CylinderGeometry axis is Y; rotate around X by angle `a` to point radially
+            arm.rotation.x = a;
+            arm.castShadow = true;
+            g.add(arm);
+        }
     }
     return g;
 }
