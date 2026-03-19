@@ -111,7 +111,23 @@
             </div>
             <div class="toggle-row">
                 <label class="toggle"><input type="checkbox" id="show-gears" checked><span class="toggle-track"></span></label>
-                <span>Gear Sets</span>
+                <span>Gear Sets (all)</span>
+            </div>
+            <div class="toggle-row sub-toggle">
+                <label class="toggle"><input type="checkbox" id="show-gs1" checked><span class="toggle-track"></span></label>
+                <span>GS1</span>
+            </div>
+            <div class="toggle-row sub-toggle">
+                <label class="toggle"><input type="checkbox" id="show-gs2" checked><span class="toggle-track"></span></label>
+                <span>GS2</span>
+            </div>
+            <div class="toggle-row sub-toggle">
+                <label class="toggle"><input type="checkbox" id="show-gs3" checked><span class="toggle-track"></span></label>
+                <span>GS3</span>
+            </div>
+            <div class="toggle-row sub-toggle">
+                <label class="toggle"><input type="checkbox" id="show-gs4" checked><span class="toggle-track"></span></label>
+                <span>GS4</span>
             </div>
             <div class="toggle-row">
                 <label class="toggle"><input type="checkbox" id="show-clutches" checked><span class="toggle-track"></span></label>
@@ -128,6 +144,14 @@
             <div class="slider-row">
                 <input type="range" id="housing-opacity" min="0" max="100" value="18">
                 <span class="slider-val" id="opacity-val">18%</span>
+            </div>
+        </section>
+
+        <section class="panel-section">
+            <h3>Stopped Parts Opacity</h3>
+            <div class="slider-row">
+                <input type="range" id="inactive-opacity" min="0" max="100" value="15">
+                <span class="slider-val" id="inactive-opacity-val">15%</span>
             </div>
         </section>
 

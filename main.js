@@ -504,8 +504,11 @@ const gsX = [];
 const parts = {
     suns: [], rings: [], carriers: [], planets: [],
     clutches: {},
+    gsGroups: [],    // per-gear-set visibility groups
     inputShaft: null, outputShaft: null,
 };
+
+let inactiveOpacity = 0.15; // controlled by UI slider
 
 // ── Gear Sets ────────────────────────────────────────────────────────────────
 
@@ -517,13 +520,19 @@ GS_SPEC.forEach((spec, idx) => {
     const planetPitchR = (M * planetTeeth) / 2;
     const planetOrbitR = sunPitchR + planetPitchR;
 
+    // Per-gear-set group for visibility toggling
+    const gsGroup = new THREE.Group();
+    gsGroup.name = `GS${idx + 1}`;
+    gearGrp.add(gsGroup);
+    parts.gsGroups.push(gsGroup);
+
     // Sun
     const sunGeo = makeExternalGear(M, spec.sun, FW * 0.82, 0.18);
     const sunMesh = new THREE.Mesh(sunGeo, mat(PAL.sun, { metalness: 0.05, roughness: 0.85 }));
     sunMesh.position.x = x;
     sunMesh.castShadow = true;
     sunMesh.receiveShadow = true;
-    gearGrp.add(sunMesh);
+    gsGroup.add(sunMesh);
     parts.suns.push({ mesh: sunMesh, idx, teeth: spec.sun });
 
     // Ring
@@ -533,13 +542,13 @@ GS_SPEC.forEach((spec, idx) => {
     ringMesh.position.x = x;
     ringMesh.castShadow = true;
     ringMesh.receiveShadow = true;
-    gearGrp.add(ringMesh);
+    gsGroup.add(ringMesh);
     parts.rings.push({ mesh: ringMesh, idx, teeth: spec.ring });
 
     // Carrier
     const carrier = makeCarrier(0.2, planetOrbitR + planetPitchR * 0.45, FW * 0.9, 4);
     carrier.position.x = x;
-    gearGrp.add(carrier);
+    gsGroup.add(carrier);
     parts.carriers.push({ mesh: carrier, idx });
 
     // Planets (4 per set)
@@ -550,14 +559,14 @@ GS_SPEC.forEach((spec, idx) => {
         const pMesh = new THREE.Mesh(pGeo, mat(PAL.planet, { metalness: 0.05, roughness: 0.85 }));
         pMesh.position.set(x, Math.cos(a) * planetOrbitR, Math.sin(a) * planetOrbitR);
         pMesh.castShadow = true;
-        gearGrp.add(pMesh);
+        gsGroup.add(pMesh);
         parts.planets.push({ mesh: pMesh, idx, angle: a, orbitR: planetOrbitR, baseX: x, pTeeth: planetTeeth });
 
         // Pin shaft
         const pinGeo = makeTube(0, 0.045, FW * 0.9, 12);
         const pin = new THREE.Mesh(pinGeo, mat(0x606068, { metalness: 0.05, roughness: 0.9 }));
         pin.position.set(x, Math.cos(a) * planetOrbitR, Math.sin(a) * planetOrbitR);
-        gearGrp.add(pin);
+        gsGroup.add(pin);
     }
 });
 
@@ -1137,7 +1146,7 @@ function setGear(gear) {
         const key = `gs${idx + 1}_sun`;
         const col = sColor(key);
         const on = isMoving(key);
-        setM(mesh.material, col, on ? 0.95 : 0.4, 0x000000, 0);
+        setM(mesh.material, col, on ? 0.95 : inactiveOpacity, 0x000000, 0);
         mesh.renderOrder = on ? 2 : 0;
     });
 
@@ -1145,7 +1154,7 @@ function setGear(gear) {
         const key = `gs${idx + 1}_ring`;
         const col = sColor(key);
         const on = isMoving(key);
-        setM(mesh.material, col, on ? 0.85 : 0.3, 0x000000, 0);
+        setM(mesh.material, col, on ? 0.85 : inactiveOpacity * 0.75, 0x000000, 0);
         mesh.renderOrder = on ? 1 : 0;
     });
 
@@ -1155,7 +1164,7 @@ function setGear(gear) {
         const on = isMoving(key);
         mesh.traverse(ch => {
             if (!ch.isMesh) return;
-            setM(ch.material, col, on ? 0.92 : 0.35, 0x000000, 0);
+            setM(ch.material, col, on ? 0.92 : inactiveOpacity, 0x000000, 0);
             ch.material.side = THREE.DoubleSide; // flat planes need DoubleSide
             ch.renderOrder = on ? 2 : 0;
         });
@@ -1166,7 +1175,7 @@ function setGear(gear) {
         const key = `gs${p.idx + 1}_carrier`;
         const col = sColor(key);
         const on = isMoving(key);
-        setM(p.mesh.material, col, on ? 0.95 : 0.35, 0x000000, 0);
+        setM(p.mesh.material, col, on ? 0.95 : inactiveOpacity, 0x000000, 0);
         p.mesh.renderOrder = on ? 2 : 0;
     });
 
@@ -1361,6 +1370,20 @@ document.getElementById('drum-opacity').addEventListener('input', e => {
             d.drumMat.needsUpdate = true;
         }
     });
+});
+
+// Per-gear-set visibility
+['gs1','gs2','gs3','gs4'].forEach((id, i) => {
+    document.getElementById(`show-${id}`).addEventListener('change', e => {
+        parts.gsGroups[i].visible = e.target.checked;
+    });
+});
+
+// Inactive (stopped) parts opacity
+document.getElementById('inactive-opacity').addEventListener('input', e => {
+    inactiveOpacity = e.target.value / 100;
+    document.getElementById('inactive-opacity-val').textContent = `${e.target.value}%`;
+    setGear(currentGear); // re-apply coloring with new opacity
 });
 
 window.addEventListener('keydown', e => {
