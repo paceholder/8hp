@@ -1268,9 +1268,6 @@ function setGear(gear) {
     document.getElementById('current-gear').textContent = d.name;
     document.getElementById('current-ratio').textContent = d.ratio.toFixed(3);
     updateTorquePanel(gear);
-    document.querySelectorAll('.el-card').forEach(card => {
-        card.classList.toggle('engaged', d.engaged.includes(card.dataset.el));
-    });
 
     // Rebuild flow arrows
     buildFlowArrows(gear);
