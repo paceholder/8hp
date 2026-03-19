@@ -59,7 +59,7 @@ const scene = new THREE.Scene();
 scene.background = new THREE.Color(PAL.bg);
 
 const camera = new THREE.PerspectiveCamera(38, innerWidth / innerHeight, 0.05, 300);
-camera.position.set(4, 8, 18);
+camera.position.set(3, 5, 12);
 
 const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
 renderer.setSize(innerWidth, innerHeight);
@@ -577,20 +577,65 @@ const gearGrp = new THREE.Group();
 const clutchGrp = new THREE.Group();
 root.add(housingGrp, shaftGrp, gearGrp, clutchGrp);
 
-// Module (tooth size) — chosen so pitchR = module*teeth/2 gives nice sizes
-const M = 0.05;  // gear module
+// ── Real ZF 8HP dimensions (scaled: 1 unit ≈ 50mm) ──────────────────────────
+// Overall transmission: ~710mm long, ~244mm case bore diameter
+// Reference: ZF 8HP70 SAE paper + GEARS Magazine 845RE teardown
 
-// Face widths
-const FW = 0.9;
-const GAP = 0.45;
-const totalLen = 4 * FW + 3 * GAP; // ~4.95
+const SCALE = 1 / 50; // mm to model units
 
-// X positions of each gear set center
-const gsX = [];
-{
-    const start = -totalLen / 2 + FW / 2;
-    for (let i = 0; i < 4; i++) gsX.push(start + i * (FW + GAP));
-}
+// Real diameters (mm) → model radii
+const DIMS = {
+    caseBore:    244 * SCALE / 2,   // 2.44 → r=1.22
+    tcOD:        268 * SCALE / 2,   // torque converter OD
+    tcDepth:     174 * SCALE,       // TC depth
+    s1OD:        73.7 * SCALE / 2,  // P1 sun OD (48T)
+    s2OD:        81.8 * SCALE / 2,  // P2 sun OD (48T)
+    s3OD:        89.5 * SCALE / 2,  // P3 sun OD (69T, 8HP70)
+    s4OD:        35 * SCALE / 2,    // P4 sun OD (23T, estimated)
+    p3RingOD:    160.4 * SCALE / 2, // P3 ring gear OD
+    brakeA_OD:   146 * SCALE / 2,   // Brake A friction OD
+    brakeB_OD:   198 * SCALE / 2,   // Brake B friction OD
+    clutchC_OD:  170 * SCALE / 2,   // Clutch C friction OD
+    clutchD_OD:  172 * SCALE / 2,   // Clutch D friction OD (hub 162mm)
+    clutchE_OD:  170 * SCALE / 2,   // Clutch E friction OD
+    drumC_OD:    117 * SCALE / 2,   // Drum C inner OD
+    drumE_OD:    117 * SCALE / 2,   // Drum E inner OD
+    hubD_OD:     162 * SCALE / 2,   // Hub D OD
+    hubD_H:      174 * SCALE,       // Hub D height (axial)
+    inputShaftR:  16 * SCALE / 2,   // input shaft radius (estimated)
+    outputShaftR: 35 * SCALE / 2,   // output shaft spline OD
+};
+
+// Gear module derived from real dimensions: module = 2*r / teeth
+const M = (DIMS.s1OD * 2) / 48;  // ≈ 0.0307 per tooth
+
+// Axial layout (mm from front face, engine side = 0)
+// Real order: TC | Pump | Brakes A&B | P1 | P2 | C/D/E clutches | P3 | P4 | Output
+// Total gear train length ≈ 520mm
+const AX = {
+    brakesAB: 60 * SCALE,    // brakes in stator support, front
+    P1:       120 * SCALE,    // first planetary
+    P2:       190 * SCALE,    // second planetary (input carrier)
+    clutchCE: 260 * SCALE,    // C/E clutch zone
+    clutchD:  310 * SCALE,    // D clutch hub
+    P3:       360 * SCALE,    // third planetary
+    P4:       440 * SCALE,    // fourth planetary (output)
+};
+const axCenter = 280 * SCALE; // center point for model origin
+
+// Face widths (realistic: gear face ~22mm, clutch packs 17-26mm)
+const FW = 22 * SCALE;       // gear face width
+const FW_CLUTCH = 25 * SCALE; // clutch pack width
+const GAP = 20 * SCALE;       // gap between components
+
+// X positions of each gear set center (shifted so model is centered at origin)
+const gsX = [
+    AX.P1 - axCenter,
+    AX.P2 - axCenter,
+    AX.P3 - axCenter,
+    AX.P4 - axCenter,
+];
+const totalLen = (AX.P4 - AX.P1) + FW * 2;
 
 const parts = {
     suns: [], rings: [], carriers: [], planets: [],
@@ -603,12 +648,15 @@ let inactiveOpacity = 0.15; // controlled by UI slider
 
 // ── Gear Sets ────────────────────────────────────────────────────────────────
 
+// Real sun ODs per gear set
+const SUN_RADII = [DIMS.s1OD, DIMS.s2OD, DIMS.s3OD, DIMS.s4OD];
+
 GS_SPEC.forEach((spec, idx) => {
     const x = gsX[idx];
-    const sunPitchR = (M * spec.sun) / 2;
-    const ringPitchR = (M * spec.ring) / 2;
+    const sunPitchR = SUN_RADII[idx]; // use real measured sun radius
+    const ringPitchR = (sunPitchR * spec.ring) / spec.sun; // proportional ring
     const planetTeeth = (spec.ring - spec.sun) / 2;
-    const planetPitchR = (M * planetTeeth) / 2;
+    const planetPitchR = (ringPitchR - sunPitchR) / 2;
     const planetOrbitR = sunPitchR + planetPitchR;
 
     // Per-gear-set group for visibility toggling
@@ -726,48 +774,55 @@ function addDrum(innerR, outerR, xStart, xEnd, color, labelText) {
     return { group: grp, drumMat, innerR, outerR, xMid, len };
 }
 
-// Sun shaft drum: wraps around GS1 & GS2 sun gears (this is what Brake A grabs)
-const sunR = GS_SPEC[0].sun * M / 2;
-const drum_sunShaft = addDrum(sunR + M * 1.2, sunR + M * 1.2 + 0.08,
-    gsX[0] - FW * 0.5, gsX[1] + FW * 0.5, DRUM_STYLES[0].color);
+// ── Shaft dimensions (needed by drums AND shafts, defined early) ─────────────
+const inpShaftLen = 521 * SCALE;
+const outShaftLen = 180 * SCALE;
+
+const sunShaftR = DIMS.s1OD + 0.02;
+const c1ir = sunShaftR + 0.03;       // GS1 carrier ↔ GS4 ring inner
+const c1or = c1ir + 0.04;
+const c2ir = c1or + 0.02;            // GS2 ring ↔ GS3 sun inner
+const c2or = c2ir + 0.04;
+const c3ir = c2or + 0.02;            // GS3 ring ↔ GS4 sun inner
+const c3or = c3ir + 0.04;
+
+// Sun shaft drum: wraps around P1 & P2 sun gears (Brake A grabs this)
+const drum_sunShaft = addDrum(sunShaftR, sunShaftR + 0.03,
+    gsX[0] - FW, gsX[1] + FW, DRUM_STYLES[0].color);
 parts.drums.push({ group: drum_sunShaft.group, speedKey: 'gs1_sun', type: 'drum', drumMat: drum_sunShaft.drumMat });
 
-// GS1 carrier → GS4 ring drum
-const carrierR = (sunR + GS_SPEC[0].ring * M / 2) / 2;
-const drum_gs1c_gs4r = addDrum(carrierR + 0.12, carrierR + 0.2,
-    gsX[0] - FW * 0.3, gsX[3] + FW * 0.3, DRUM_STYLES[1].color);
+// GS1 carrier → GS4 ring drum (spans full length P1 to P4)
+const drum_gs1c_gs4r = addDrum(c1ir, c1or,
+    gsX[0] - FW, gsX[3] + FW, DRUM_STYLES[1].color);
 parts.drums.push({ group: drum_gs1c_gs4r.group, speedKey: 'gs1_carrier', type: 'drum', drumMat: drum_gs1c_gs4r.drumMat });
 
-// GS2 ring → GS3 sun drum
-const gs2ringR = GS_SPEC[1].ring * M / 2;
-const drum_gs2r_gs3s = addDrum(gs2ringR + M * 2 + 0.05, gs2ringR + M * 2 + 0.13,
-    gsX[1] - FW * 0.2, gsX[2] + FW * 0.2, DRUM_STYLES[2].color);
+// GS2 ring → GS3 sun drum (P2 to P3)
+const drum_gs2r_gs3s = addDrum(c2ir, c2or,
+    gsX[1] - FW * 0.5, gsX[2] + FW * 0.5, DRUM_STYLES[2].color);
 parts.drums.push({ group: drum_gs2r_gs3s.group, speedKey: 'gs2_ring', type: 'drum', drumMat: drum_gs2r_gs3s.drumMat });
 
-// GS3 ring → GS4 sun drum
-const gs3ringR = GS_SPEC[2].ring * M / 2;
-const drum_gs3r_gs4s = addDrum(gs3ringR + M * 2 + 0.05, gs3ringR + M * 2 + 0.13,
-    gsX[2] - FW * 0.2, gsX[3] + FW * 0.2, DRUM_STYLES[3].color);
+// GS3 ring → GS4 sun drum (P3 to P4)
+const drum_gs3r_gs4s = addDrum(c3ir, c3or,
+    gsX[2] - FW * 0.5, gsX[3] + FW * 0.5, DRUM_STYLES[3].color);
 parts.drums.push({ group: drum_gs3r_gs4s.group, speedKey: 'gs3_ring', type: 'drum', drumMat: drum_gs3r_gs4s.drumMat });
 
 // GS4 carrier → output drum
-const gs4carrierR = (GS_SPEC[3].sun * M / 2 + GS_SPEC[3].ring * M / 2) / 2;
-const drum_output = addDrum(gs4carrierR + 0.1, gs4carrierR + 0.18,
-    gsX[3] - FW * 0.3, gsX[3] + FW + 0.5, DRUM_STYLES[4].color);
+const gs4cR = (DIMS.s4OD + SUN_RADII[3] * GS_SPEC[3].ring / GS_SPEC[3].sun) / 2;
+const drum_output = addDrum(gs4cR, gs4cR + 0.04,
+    gsX[3] - FW, gsX[3] + FW + outShaftLen * 0.3, DRUM_STYLES[4].color);
 parts.drums.push({ group: drum_output.group, speedKey: 'gs4_carrier', type: 'drum', drumMat: drum_output.drumMat });
 
 // ── Shafts ───────────────────────────────────────────────────────────────────
 
-// Input shaft — bold yellow/dark stripes, extends from TC to past GS4
-const inpShaftLen = totalLen + 4.5;
-const inpShaft = makeVisibleShaft(0.16, inpShaftLen, 4, 0xd4a830, 0x665520);
-inpShaft.position.x = (gsX[0] + gsX[3]) / 2 - 1.5;
+// Input shaft — runs from TC through to clutch area (real: ~521mm, 32 splines)
+const inpShaft = makeVisibleShaft(DIMS.inputShaftR, inpShaftLen, 4, 0xd4a830, 0x665520);
+inpShaft.position.x = (gsX[0] + gsX[1]) / 2 - 1;
 shaftGrp.add(inpShaft);
 parts.inputShaft = inpShaft;
 
-// Output shaft — bold green/dark stripes
-const outShaft = makeVisibleShaft(0.22, 2.5, 4, 0x6aaa45, 0x2d5520);
-outShaft.position.x = gsX[3] + 2;
+// Output shaft — from P4 carrier out the back (real: ~180mm)
+const outShaft = makeVisibleShaft(DIMS.outputShaftR, outShaftLen, 4, 0x6aaa45, 0x2d5520);
+outShaft.position.x = gsX[3] + outShaftLen / 2 + FW;
 shaftGrp.add(outShaft);
 parts.outputShaft = outShaft;
 
@@ -793,26 +848,36 @@ function makeConnShaft(ir, or, length, x) {
     return g;
 }
 
-// GS1 carrier ↔ GS4 ring
-const c1 = makeConnShaft(0.26, 0.32, Math.abs(gsX[3] - gsX[0]) + FW, (gsX[0] + gsX[3]) / 2);
+// Concentric connection shafts — nested tubes with realistic nesting order
+// Radii defined above (before drums). Here we create the actual meshes.
+
+// GS1 carrier ↔ GS4 ring (spans full P1 to P4)
+const c1 = makeConnShaft(c1ir, c1or, Math.abs(gsX[3] - gsX[0]) + FW * 2, (gsX[0] + gsX[3]) / 2);
 shaftGrp.add(c1);
 
-// GS2 ring ↔ GS3 sun
-const c2 = makeConnShaft(0.38, 0.43, GAP + FW * 0.6, (gsX[1] + gsX[2]) / 2);
+// GS2 ring ↔ GS3 sun (spans P2 to P3)
+const c2 = makeConnShaft(c2ir, c2or, Math.abs(gsX[2] - gsX[1]) + FW, (gsX[1] + gsX[2]) / 2);
 shaftGrp.add(c2);
 
-// GS3 ring ↔ GS4 sun
-const c3 = makeConnShaft(0.46, 0.50, GAP + FW * 0.3, (gsX[2] + gsX[3]) / 2 + 0.15);
+// GS3 ring ↔ GS4 sun (spans P3 to P4)
+const c3 = makeConnShaft(c3ir, c3or, Math.abs(gsX[3] - gsX[2]) + FW, (gsX[2] + gsX[3]) / 2);
 shaftGrp.add(c3);
 
 // ── Clutches & Brakes ────────────────────────────────────────────────────────
 
+// Clutch/brake specs with real dimensions and positions
+// Brakes A&B are at the FRONT (in stator support), before P1
+// Clutches C, D, E are between P2 and P3/P4
+const brakesX = AX.brakesAB - axCenter;
+const clutchCEX = AX.clutchCE - axCenter;
+const clutchDX = AX.clutchD - axCenter;
+
 const cSpecs = {
-    A: { ir: 0.2,  or: 0.52,  len: 0.55, nDiscs: 7,  x: gsX[0] - FW * 0.85 },
-    B: { ir: GS_SPEC[0].ring * M / 2 + M * 1.8, or: GS_SPEC[0].ring * M / 2 + M * 1.8 + 0.32, len: 0.6, nDiscs: 8, x: gsX[0] },
-    C: { ir: 0.55, or: 1.0,   len: 0.5,  nDiscs: 6,  x: (gsX[2] + gsX[3]) / 2 },
-    D: { ir: 0.28, or: 0.72,  len: 0.5,  nDiscs: 6,  x: gsX[3] + FW * 0.72 },
-    E: { ir: GS_SPEC[2].sun * M / 2 + M * 0.5, or: GS_SPEC[2].ring * M / 2 - M * 0.5, len: 0.45, nDiscs: 6, x: gsX[2] + FW * 0.6 },
+    A: { ir: DIMS.inputShaftR + 0.02, or: DIMS.brakeA_OD, len: FW_CLUTCH, nDiscs: 5, x: brakesX },
+    B: { ir: DIMS.brakeA_OD + 0.04, or: DIMS.brakeB_OD, len: FW_CLUTCH, nDiscs: 5, x: brakesX + FW_CLUTCH * 1.2 },
+    C: { ir: DIMS.drumC_OD - 0.05, or: DIMS.clutchC_OD, len: FW_CLUTCH, nDiscs: 6, x: clutchCEX },
+    D: { ir: DIMS.outputShaftR + 0.02, or: DIMS.clutchD_OD, len: DIMS.hubD_H, nDiscs: 4, x: clutchDX },
+    E: { ir: DIMS.drumE_OD - 0.05, or: DIMS.clutchE_OD, len: FW_CLUTCH, nDiscs: 5, x: clutchCEX + FW_CLUTCH * 1.5 },
 };
 
 // Speed key for each clutch — what member speed drives it
@@ -849,9 +914,9 @@ Object.entries(CLUTCH_LABELS).forEach(([name, text]) => {
 // ── Torque Converter (Hydrotransformator) ────────────────────────────────────
 
 const tcGroup = new THREE.Group();
-const tcX = gsX[0] - FW * 2.2; // engine side of GS1
-const tcR = 1.8;
-const tcWidth = 1.2;
+const tcX = gsX[0] - (AX.P1 - 0) * SCALE - DIMS.tcDepth / 2; // in front of everything
+const tcR = DIMS.tcOD;
+const tcWidth = DIMS.tcDepth;
 
 // Impeller (engine side) — donut shape + vane group
 const impellerGrp = new THREE.Group();
@@ -966,9 +1031,8 @@ parts.tcTurbine = turbineGrp;
 
 // ── Housing ──────────────────────────────────────────────────────────────────
 
-const maxRingR = Math.max(...GS_SPEC.map(s => s.ring * M / 2 + M * 2));
-const caseR = Math.max(maxRingR + 0.8, tcR + 0.3);
-const caseLen = totalLen + 2;
+const caseR = DIMS.caseBore + 0.05; // case bore radius + wall thickness
+const caseLen = 600 * SCALE; // main case length (excluding TC)
 
 // Main shell
 const shellGeo = makeTube(caseR - 0.06, caseR, caseLen, 48);

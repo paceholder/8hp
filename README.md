@@ -58,6 +58,16 @@ No build step required — pure HTML/CSS/JS with ES module imports from CDN.
 Shaft speeds are derived from the planetary gear equation `(1+k)·Nc = Ns + k·Nr`
 with rigid connection propagation between gear sets.
 
+## References
+
+- [SAE 2009-01-0510: ZF New 8-Speed Automatic Transmission 8HP70](https://saemobilus.sae.org/articles/zf-new-8-speed-automatic-transmission-8hp70-basic-design-hybridization-2009-01-0510) — original ZF engineering paper
+- [Saturation Dive: The ZF 8HP (The Truth About Cars)](https://www.thetruthaboutcars.com/2014/03/saturation-dive-zf-8-speed-automatic/) — detailed engagement chart and power flow analysis
+- [GEARS Magazine: The 845RE Internally Speaking](https://gearsmagazine.com/magazine/845re-internally-speaking/) — teardown with physical component order and dimensions
+- [ZF 8HP transmission — Wikipedia](https://en.wikipedia.org/wiki/ZF_8HP_transmission) — overview, variants, applications
+- [PMC Motorsport: ZF 8HP Architecture](https://pmcmotorsport-shop.com/ZF-8HP-architecture-mechanics-and-origins-of-the-worlds-best-transmission-blog-eng-1772805051.html) — mechanics and design philosophy
+- [ZF Training Workbook (PDF)](https://w124performance.com/ISO/LR/ZF_Workbook-6-8HP.pdf) — official ZF training material
+- [Sonnax: Chrysler ZF8 Gen 1 & 2 Identification Guide](https://www.sonnax.com/tech_resources/1257-chrysler-zf8-gen-1-2-identification-guide) — clutch plate specs and dimensions
+
 ## License
 
 MIT
