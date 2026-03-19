@@ -1620,9 +1620,11 @@ function animate() {
     // Check which gear sets are locked (all elements same speed → no planet self-spin)
     const { engaged } = GEAR_DATA[currentGear];
     const gsLocked = [false, false, false, false];
-    // Clutch E locks GS3
+    // Brakes A+B both engaged → GS1 sun=0, ring=0, carrier=0 → GS1 locked at zero
+    if (engaged.includes('A') && engaged.includes('B')) gsLocked[0] = true;
+    // Clutch E locks GS3 (sun = ring = carrier)
     if (engaged.includes('E')) gsLocked[2] = true;
-    // 6th gear (direct drive) — everything locked
+    // 6th gear (direct drive) — everything locked at 1:1
     if (currentGear === '6') { gsLocked[0] = gsLocked[1] = gsLocked[2] = gsLocked[3] = true; }
 
     parts.planets.forEach(p => {
