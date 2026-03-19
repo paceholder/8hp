@@ -1146,16 +1146,23 @@ function setGear(gear) {
     // Rebuild flow arrows
     buildFlowArrows(gear);
 
-    // ── Helper: all dynamic materials stay transparent with depthWrite OFF
-    //    This prevents view-angle-dependent disappearing of geometry
+    // Helper: near-opaque parts use normal depth writing to avoid
+    // z-fighting / bleed-through on gear teeth. Only genuinely
+    // translucent parts (opacity < 0.8) go through the transparent path.
     function setM(m, color, opacity, emHex, emInt) {
         m.color.setHex(color);
-        m.transparent = true;
-        m.depthWrite = false;
-        m.side = THREE.DoubleSide;
         m.opacity = opacity;
         m.emissive.setHex(emHex);
         m.emissiveIntensity = emInt;
+        if (opacity >= 0.8) {
+            m.transparent = false;
+            m.depthWrite = true;
+            m.side = THREE.FrontSide;
+        } else {
+            m.transparent = true;
+            m.depthWrite = false;
+            m.side = THREE.DoubleSide;
+        }
         m.needsUpdate = true;
     }
 
@@ -1174,7 +1181,7 @@ function setGear(gear) {
         const on = activeGS.includes(idx);
         setM(mesh.material,
             on ? ACTIVE_COLORS.ring : INACTIVE_GRAY,
-            on ? 0.78 : 0.1,
+            on ? 0.85 : 0.1,
             on ? 0x001122 : 0x000000,
             on ? 0.15 : 0);
         mesh.renderOrder = on ? 1 : 0;
@@ -1188,6 +1195,7 @@ function setGear(gear) {
                 on ? ACTIVE_COLORS.carrier : INACTIVE_GRAY,
                 on ? 0.92 : 0.15,
                 0x000000, 0);
+            ch.material.side = THREE.DoubleSide; // flat planes need DoubleSide
             ch.renderOrder = on ? 2 : 0;
         });
     });
@@ -1220,6 +1228,7 @@ function setGear(gear) {
                     on ? 0.95 : 0.06,
                     on ? 0x551800 : 0x000000,
                     on ? 0.4 : 0);
+                m.side = THREE.DoubleSide; // flat RingGeometry
             }
             ch.renderOrder = on ? 3 : 0;
         });
