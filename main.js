@@ -1400,27 +1400,78 @@ function animate() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// SETTINGS PERSISTENCE (localStorage)
+// ─────────────────────────────────────────────────────────────────────────────
+
+const STORAGE_KEY = 'zf8hp_settings';
+
+function saveSettings() {
+    const s = {};
+    // Toggles
+    ['show-housing','show-shafts','show-gears','show-gs1','show-gs2','show-gs3','show-gs4',
+     'show-clutches','show-flow'].forEach(id => {
+        s[id] = document.getElementById(id).checked;
+    });
+    // Sliders
+    ['housing-opacity','inactive-opacity','drum-opacity','anim-speed'].forEach(id => {
+        s[id] = document.getElementById(id).value;
+    });
+    // Current gear
+    s.gear = currentGear;
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(s)); } catch {}
+}
+
+function loadSettings() {
+    let s;
+    try { s = JSON.parse(localStorage.getItem(STORAGE_KEY)); } catch {}
+    if (!s) return;
+
+    // Toggles — set checkbox and fire change event
+    ['show-housing','show-shafts','show-gears','show-gs1','show-gs2','show-gs3','show-gs4',
+     'show-clutches','show-flow'].forEach(id => {
+        if (s[id] !== undefined) {
+            const el = document.getElementById(id);
+            el.checked = s[id];
+            el.dispatchEvent(new Event('change'));
+        }
+    });
+    // Sliders — set value and fire input event
+    ['housing-opacity','inactive-opacity','drum-opacity','anim-speed'].forEach(id => {
+        if (s[id] !== undefined) {
+            const el = document.getElementById(id);
+            el.value = s[id];
+            el.dispatchEvent(new Event('input'));
+        }
+    });
+    // Gear
+    if (s.gear) return s.gear;
+    return null;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // UI WIRING
 // ─────────────────────────────────────────────────────────────────────────────
 
 document.querySelectorAll('.gear-btn').forEach(b =>
-    b.addEventListener('click', () => setGear(b.dataset.gear)));
+    b.addEventListener('click', () => { setGear(b.dataset.gear); saveSettings(); }));
 
-document.getElementById('show-housing').addEventListener('change', e => housingGrp.visible = e.target.checked);
-document.getElementById('show-shafts').addEventListener('change', e => shaftGrp.visible = e.target.checked);
-document.getElementById('show-gears').addEventListener('change', e => gearGrp.visible = e.target.checked);
-document.getElementById('show-clutches').addEventListener('change', e => clutchGrp.visible = e.target.checked);
-document.getElementById('show-flow').addEventListener('change', e => flowGroup.visible = e.target.checked);
+document.getElementById('show-housing').addEventListener('change', e => { housingGrp.visible = e.target.checked; saveSettings(); });
+document.getElementById('show-shafts').addEventListener('change', e => { shaftGrp.visible = e.target.checked; saveSettings(); });
+document.getElementById('show-gears').addEventListener('change', e => { gearGrp.visible = e.target.checked; saveSettings(); });
+document.getElementById('show-clutches').addEventListener('change', e => { clutchGrp.visible = e.target.checked; saveSettings(); });
+document.getElementById('show-flow').addEventListener('change', e => { flowGroup.visible = e.target.checked; saveSettings(); });
 
 document.getElementById('housing-opacity').addEventListener('input', e => {
     const v = e.target.value / 100;
     document.getElementById('opacity-val').textContent = `${e.target.value}%`;
     housingGrp.traverse(ch => { if (ch.isMesh && ch.material.transparent) ch.material.opacity = v; });
+    saveSettings();
 });
 
 document.getElementById('anim-speed').addEventListener('input', e => {
     animSpeed = e.target.value / 100;
     document.getElementById('speed-val').textContent = `${e.target.value}%`;
+    saveSettings();
 });
 
 document.getElementById('drum-opacity').addEventListener('input', e => {
@@ -1438,12 +1489,14 @@ document.getElementById('drum-opacity').addEventListener('input', e => {
             });
         }
     });
+    saveSettings();
 });
 
 // Per-gear-set visibility
 ['gs1','gs2','gs3','gs4'].forEach((id, i) => {
     document.getElementById(`show-${id}`).addEventListener('change', e => {
         parts.gsGroups[i].visible = e.target.checked;
+        saveSettings();
     });
 });
 
@@ -1451,12 +1504,13 @@ document.getElementById('drum-opacity').addEventListener('input', e => {
 document.getElementById('inactive-opacity').addEventListener('input', e => {
     inactiveOpacity = e.target.value / 100;
     document.getElementById('inactive-opacity-val').textContent = `${e.target.value}%`;
-    setGear(currentGear); // re-apply coloring with new opacity
+    setGear(currentGear);
+    saveSettings();
 });
 
 window.addEventListener('keydown', e => {
-    if (e.key >= '1' && e.key <= '8') setGear(e.key);
-    if (e.key.toLowerCase() === 'r') setGear('R');
+    if (e.key >= '1' && e.key <= '8') { setGear(e.key); saveSettings(); }
+    if (e.key.toLowerCase() === 'r') { setGear('R'); saveSettings(); }
 });
 
 window.addEventListener('resize', () => {
@@ -1468,5 +1522,6 @@ window.addEventListener('resize', () => {
 
 // ── GO ───────────────────────────────────────────────────────────────────────
 
-setGear('1');
+const savedGear = loadSettings();
+setGear(savedGear || '1');
 animate();
