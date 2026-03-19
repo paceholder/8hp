@@ -589,6 +589,11 @@ GS_SPEC.forEach((spec, idx) => {
         const pGeo = makeExternalGear(M, planetTeeth, FW * 0.75, 0.06);
         const pMesh = new THREE.Mesh(pGeo, mat(PAL.planet, { metalness: 0.05, roughness: 0.85 }));
         pMesh.position.set(x, Math.cos(a) * planetOrbitR, Math.sin(a) * planetOrbitR);
+        // Initial rotation: align planet gap with ring tooth at ring-planet contact (visual angle π/2)
+        const tp = 2 * Math.PI / planetTeeth;
+        const kBest = Math.round(Math.PI / 2 / tp - 0.5);
+        const baseOffset = Math.PI / 2 - (kBest + 0.5) * tp;
+        pMesh.rotation.x = baseOffset + a * (1 + spec.sun / planetTeeth);
         pMesh.castShadow = true;
         gsGroup.add(pMesh);
         parts.planets.push({ mesh: pMesh, idx, angle: a, orbitR: planetOrbitR, baseX: x, pTeeth: planetTeeth });
@@ -1307,7 +1312,7 @@ function animate() {
         mesh.rotation.x += (curSpeeds[`gs${idx + 1}_carrier`] || 0) * V * dt;
     });
 
-    // Planets — orbit + self spin
+    // Planets — orbit position + absolute rotation (carrier + rolling on sun)
     parts.planets.forEach(p => {
         const cs = curSpeeds[`gs${p.idx + 1}_carrier`] || 0;
         const ss = curSpeeds[`gs${p.idx + 1}_sun`] || 0;
@@ -1315,7 +1320,8 @@ function animate() {
         p.mesh.position.y = Math.cos(p.angle) * p.orbitR;
         p.mesh.position.z = Math.sin(p.angle) * p.orbitR;
         const sunT = GS_SPEC[p.idx].sun;
-        p.mesh.rotation.x += (ss - cs) * V * dt * (sunT / p.pTeeth);
+        // Absolute planet rotation = carrier orbit + self-spin from sun-planet mesh
+        p.mesh.rotation.x += (cs + (cs - ss) * (sunT / p.pTeeth)) * V * dt;
     });
 
     // Torque converter — impeller at input speed, turbine slightly slower (slip)
