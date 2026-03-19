@@ -1370,6 +1370,7 @@ function setGear(gear) {
         const col = sColor(key);
         const on = isMoving(key);
         setM(mesh.material, col, on ? 0.95 : inactiveOpacity, 0x000000, 0);
+        mesh.visible = on || inactiveOpacity > 0.05;
         mesh.renderOrder = on ? 2 : 0;
     });
 
@@ -1386,6 +1387,7 @@ function setGear(gear) {
         const key = `gs${idx + 1}_carrier`;
         const col = sColor(key);
         const on = isMoving(key);
+        mesh.visible = on || inactiveOpacity > 0.05;
         mesh.traverse(ch => {
             if (!ch.isMesh) return;
             setM(ch.material, col, on ? 0.92 : inactiveOpacity, 0x000000, 0);
@@ -1400,6 +1402,7 @@ function setGear(gear) {
         const col = sColor(key);
         const on = isMoving(key);
         setM(p.mesh.material, col, on ? 0.95 : inactiveOpacity, 0x000000, 0);
+        p.mesh.visible = on || inactiveOpacity > 0.05;
         p.mesh.renderOrder = on ? 2 : 0;
     });
 
