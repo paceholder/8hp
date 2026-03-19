@@ -92,8 +92,7 @@ canvas { display: block; }
 #gear-strip {
     position: fixed;
     top: 60px;
-    left: 50%;
-    transform: translateX(-50%);
+    left: 16px;
     z-index: 20;
     display: flex;
     flex-direction: column;
@@ -169,7 +168,7 @@ canvas { display: block; }
 #torque-panel {
     position: fixed;
     top: 60px;
-    left: 16px;
+    left: 68px;
     bottom: 50px;
     width: 260px;
     z-index: 20;
