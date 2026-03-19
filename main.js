@@ -1044,124 +1044,60 @@ const flowScene = new THREE.Scene();
 const flowGroup = new THREE.Group();
 flowScene.add(flowGroup);
 
-// Power flow path definitions per gear: sequences of 3D points
-// Each path segment: [startVec3, endVec3]
-// The flow goes: Input shaft → (through gear sets via engaged elements) → Output shaft
-const FLOW_PATHS = {
-    '1': [
-        // Input → TC → GS2 carrier → GS1 carrier (via drum) → GS4 ring → GS4 carrier → output
-        { from: [-6, 0, 0], to: [gsX[1], 0, 0], label: 'Input→TC→GS2' },
-        { from: [gsX[1], 0, 1.5], to: [gsX[0], 0, 1.5], label: 'GS2→GS1' },
-        { from: [gsX[0], 0, 1.5], to: [gsX[3], 0, 1.5], label: 'GS1 carrier→GS4 ring' },
-        { from: [gsX[3], 0, 1.5], to: [gsX[3], 0, 0], label: 'GS4' },
-        { from: [gsX[3], 0, 0], to: [6, 0, 0], label: 'Output' },
-    ],
-    '2': [
-        { from: [-6, 0, 0], to: [gsX[1], 0, 0], label: 'Input→TC→GS2' },
-        { from: [gsX[1], 0, 0], to: [gsX[1], 1.5, 0], label: 'GS2' },
-        { from: [gsX[1], 1.5, 0], to: [gsX[2], 1.5, 0], label: '→GS3' },
-        { from: [gsX[2], 1.5, 0], to: [gsX[2], 0, 0], label: 'GS3(locked)' },
-        { from: [gsX[2], 0, 0], to: [gsX[3], 0, 0], label: '→GS4' },
-        { from: [gsX[3], 0, 0], to: [6, 0, 0], label: 'Output' },
-    ],
-    '3': [
-        { from: [-6, 0, 0], to: [gsX[1], 0, 0], label: 'Input→TC→GS2' },
-        { from: [gsX[1], 0, 0], to: [gsX[1], 1.5, 0], label: 'GS2' },
-        { from: [gsX[1], 1.5, 0], to: [gsX[2], 1.5, 0], label: '→GS3' },
-        { from: [gsX[2], 1.5, 0], to: [gsX[3], 1.5, 0], label: '' },
-        { from: [gsX[3], 1.5, 0], to: [gsX[3], 0, 0], label: 'GS4' },
-        { from: [gsX[3], 0, 0], to: [6, 0, 0], label: 'Output' },
-    ],
-    '4': [
-        { from: [-6, 0, 0], to: [gsX[1], 0, 0], label: 'Input→TC→GS2' },
-        { from: [gsX[1], 0, 0], to: [gsX[2], 0, 0], label: '→GS3' },
-        { from: [gsX[2], 0, 0], to: [gsX[3], 0, 0], label: '→GS4' },
-        { from: [gsX[3], 0, 0], to: [6, 0, 0], label: 'Output' },
-    ],
-    '5': [
-        { from: [-6, 0, 0], to: [gsX[1], 0, 0], label: 'Input→TC→GS2' },
-        { from: [gsX[1], 0, 0], to: [gsX[2], 0, 0], label: '→GS3' },
-        { from: [gsX[2], 0, 0], to: [gsX[2], -1.5, 0], label: 'GS3 carrier' },
-        { from: [gsX[2], -1.5, 0], to: [gsX[3], -1.5, 0], label: '→GS4' },
-        { from: [gsX[3], -1.5, 0], to: [gsX[3], 0, 0], label: 'GS4' },
-        { from: [gsX[3], 0, 0], to: [6, 0, 0], label: 'Output' },
-    ],
-    '6': [
-        // Direct drive — everything locked
-        { from: [-6, 0, 0], to: [6, 0, 0], label: 'Direct 1:1 (all locked)' },
-    ],
-    '7': [
-        { from: [-6, 0, 0], to: [gsX[1], 0, 0], label: 'Input→TC→GS2' },
-        { from: [gsX[1], 0, 0], to: [gsX[1], -1.5, 0], label: 'GS2 overdrive' },
-        { from: [gsX[1], -1.5, 0], to: [gsX[2], -1.5, 0], label: '→GS3' },
-        { from: [gsX[2], -1.5, 0], to: [gsX[3], -1.5, 0], label: '→GS4' },
-        { from: [gsX[3], -1.5, 0], to: [gsX[3], 0, 0], label: 'GS4' },
-        { from: [gsX[3], 0, 0], to: [6, 0, 0], label: 'Output' },
-    ],
-    '8': [
-        { from: [-6, 0, 0], to: [gsX[1], 0, 0], label: 'Input→TC→GS2' },
-        { from: [gsX[1], 0, 0], to: [gsX[1], -1.5, 0], label: 'GS2 overdrive' },
-        { from: [gsX[1], -1.5, 0], to: [gsX[3], -1.5, 0], label: '→GS4' },
-        { from: [gsX[3], -1.5, 0], to: [gsX[3], 0, 0], label: 'GS4' },
-        { from: [gsX[3], 0, 0], to: [6, 0, 0], label: 'Output' },
-    ],
-    'R': [
-        { from: [-6, 0, 0], to: [gsX[1], 0, 0], label: 'Input→TC→GS2' },
-        { from: [gsX[1], 0, 0], to: [gsX[0], 0, 0], label: '→GS1' },
-        { from: [gsX[0], 0, 0], to: [gsX[0], 1.5, 0], label: 'GS1(reversed)' },
-        { from: [gsX[0], 1.5, 0], to: [gsX[3], 1.5, 0], label: '→GS4' },
-        { from: [gsX[3], 1.5, 0], to: [gsX[3], 0, 0], label: 'GS4' },
-        { from: [gsX[3], 0, 0], to: [6, 0, 0], label: 'Output(rev)' },
-    ],
+// Power flow paths per gear: arrays of [x,y,z] waypoints forming a contiguous polyline.
+// The offset (y) shows which "layer" the torque passes through.
+const h = 2.0; // vertical offset for path routing above/below center
+const FLOW_POINTS = {
+    '1': [[-6,0,0], [gsX[1],0,0], [gsX[1],h,0], [gsX[0],h,0], [gsX[0],h*1.2,0], [gsX[3],h*1.2,0], [gsX[3],0,0], [6,0,0]],
+    '2': [[-6,0,0], [gsX[1],0,0], [gsX[1],h,0], [gsX[2],h,0], [gsX[2],0,0], [gsX[3],0,0], [6,0,0]],
+    '3': [[-6,0,0], [gsX[1],0,0], [gsX[1],h,0], [gsX[2],h,0], [gsX[3],h,0], [gsX[3],0,0], [6,0,0]],
+    '4': [[-6,0,0], [gsX[1],0,0], [gsX[2],0,0], [gsX[3],0,0], [6,0,0]],
+    '5': [[-6,0,0], [gsX[1],0,0], [gsX[2],0,0], [gsX[2],-h,0], [gsX[3],-h,0], [gsX[3],0,0], [6,0,0]],
+    '6': [[-6,0,0], [6,0,0]],
+    '7': [[-6,0,0], [gsX[1],0,0], [gsX[1],-h,0], [gsX[2],-h,0], [gsX[3],-h,0], [gsX[3],0,0], [6,0,0]],
+    '8': [[-6,0,0], [gsX[1],0,0], [gsX[1],-h,0], [gsX[3],-h,0], [gsX[3],0,0], [6,0,0]],
+    'R': [[-6,0,0], [gsX[1],0,0], [gsX[0],0,0], [gsX[0],h,0], [gsX[3],h,0], [gsX[3],0,0], [6,0,0]],
 };
 
-// Build flow arrow meshes — we'll keep a pool and rebuild on gear change
+// Build flow arrow meshes
 let flowMeshes = [];
 const FLOW_COLOR = 0xe85d20;
 
 function buildFlowArrows(gear) {
-    // Remove old
     flowMeshes.forEach(m => { flowGroup.remove(m); m.geometry?.dispose(); m.material?.dispose(); });
     flowMeshes = [];
 
-    const segments = FLOW_PATHS[gear];
-    if (!segments) return;
+    const pts = FLOW_POINTS[gear];
+    if (!pts || pts.length < 2) return;
 
-    segments.forEach((seg, i) => {
-        const start = new THREE.Vector3(...seg.from);
-        const end = new THREE.Vector3(...seg.to);
+    const totalSegs = pts.length - 1;
+
+    for (let i = 0; i < totalSegs; i++) {
+        const start = new THREE.Vector3(...pts[i]);
+        const end = new THREE.Vector3(...pts[i + 1]);
         const dir = end.clone().sub(start);
-        const len = dir.length();
-        if (len < 0.01) return;
+        if (dir.length() < 0.01) continue;
 
-        // Tube for flow line — FULLY OPAQUE, rendered on top of everything
+        // Opaque tube
         const curve = new THREE.LineCurve3(start, end);
         const tubeGeo = new THREE.TubeGeometry(curve, 1, 0.1, 8, false);
-        const tubeMat = new THREE.MeshBasicMaterial({
-            color: FLOW_COLOR,
-            depthTest: false,  // always on top
-        });
-        tubeMat.userData = { segIndex: i, totalSegs: segments.length };
+        const tubeMat = new THREE.MeshBasicMaterial({ color: FLOW_COLOR });
+        tubeMat.userData = { segIndex: i, totalSegs };
         const tube = new THREE.Mesh(tubeGeo, tubeMat);
-        tube.renderOrder = 999;
         flowGroup.add(tube);
         flowMeshes.push(tube);
 
-        // Arrowhead at end — also on top
-        const arrowGeo = new THREE.ConeGeometry(0.2, 0.35, 8);
-        const arrowMat = new THREE.MeshBasicMaterial({
-            color: FLOW_COLOR,
-            depthTest: false,
-        });
+        // Arrowhead at end of each segment
+        const arrowGeo = new THREE.ConeGeometry(0.18, 0.3, 8);
+        const arrowMat = new THREE.MeshBasicMaterial({ color: FLOW_COLOR });
         const arrow = new THREE.Mesh(arrowGeo, arrowMat);
-        arrow.renderOrder = 999;
         const quat = new THREE.Quaternion();
-        quat.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.clone().normalize());
+        quat.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.normalize());
         arrow.quaternion.copy(quat);
         arrow.position.copy(end);
         flowGroup.add(arrow);
         flowMeshes.push(arrow);
-    });
+    }
 }
 
 // Which gear sets are "active" (in the power path) per gear
