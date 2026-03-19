@@ -1286,13 +1286,10 @@ function animate() {
     parts.inputShaft.children.forEach(ch => { ch.rotation.x += inpRot; });
     parts.outputShaft.children.forEach(ch => { ch.rotation.x += outRot; });
 
-    // Connecting shafts rotation
-    const c1Speed = curSpeeds.gs1_carrier || 0;
-    c1.children.forEach(ch => { ch.rotation.x += c1Speed * V * dt; });
-    const c2Speed = curSpeeds.gs2_ring || 0;
-    c2.children.forEach(ch => { ch.rotation.x += c2Speed * V * dt; });
-    const c3Speed = curSpeeds.gs3_ring || 0;
-    c3.children.forEach(ch => { ch.rotation.x += c3Speed * V * dt; });
+    // Connecting shafts — rotate the group so stripes orbit around the shaft axis
+    c1.rotation.x += (curSpeeds.gs1_carrier || 0) * V * dt;
+    c2.rotation.x += (curSpeeds.gs2_ring || 0) * V * dt;
+    c3.rotation.x += (curSpeeds.gs3_ring || 0) * V * dt;
 
     // Animated flow pulse — traveling bright wave along the path
     const pulsePeriod = 1.5;
