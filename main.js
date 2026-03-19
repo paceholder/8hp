@@ -1042,24 +1042,93 @@ const flowScene = new THREE.Scene();
 const flowGroup = new THREE.Group();
 flowScene.add(flowGroup);
 
-// Power flow paths per gear: arrays of [x,y,z] waypoints forming a contiguous polyline.
-// The offset (y) shows which "layer" the torque passes through.
-const h = 2.0; // vertical offset for path routing above/below center
+// Power flow paths per gear: routed through engaged clutch positions.
+// Clutch midpoint radii (Y offsets to pass through the clutch pack)
+const cY = {
+    A: (cSpecs.A.ir + cSpecs.A.or) / 2,           // ~0.36
+    B: (cSpecs.B.ir + cSpecs.B.or) / 2,           // ~2.65
+    C: (cSpecs.C.ir + cSpecs.C.or) / 2,           // ~0.78
+    D: (cSpecs.D.ir + cSpecs.D.or) / 2,           // ~0.50
+    E: (cSpecs.E.ir + cSpecs.E.or) / 2,           // ~2.25
+};
+const cX = { A: cSpecs.A.x, B: cSpecs.B.x, C: cSpecs.C.x, D: cSpecs.D.x, E: cSpecs.E.x };
+
+// Input enters at GS2 carrier (center shaft), output exits at GS4 carrier
+const inX = gsX[1] - FW * 1.5;   // input shaft start
+const outX = gsX[3] + FW * 2.0;  // output shaft end
+
+// Each path: Input shaft → through engaged clutches/brakes → through gear sets → output shaft.
+// Waypoints route up/down to the clutch radius at the clutch X position.
 const FLOW_POINTS = {
-    '1': [[-6,0,0], [gsX[1],0,0], [gsX[1],h,0], [gsX[0],h,0], [gsX[0],h*1.2,0], [gsX[3],h*1.2,0], [gsX[3],0,0], [6,0,0]],
-    '2': [[-6,0,0], [gsX[1],0,0], [gsX[1],h,0], [gsX[2],h,0], [gsX[2],0,0], [gsX[3],0,0], [6,0,0]],
-    '3': [[-6,0,0], [gsX[1],0,0], [gsX[1],h,0], [gsX[2],h,0], [gsX[3],h,0], [gsX[3],0,0], [6,0,0]],
-    '4': [[-6,0,0], [gsX[1],0,0], [gsX[1],h*0.7,0], [gsX[2],h*0.7,0], [gsX[2],0,0], [gsX[3],0,0], [6,0,0]],
-    '5': [[-6,0,0], [gsX[1],0,0], [gsX[2],0,0], [gsX[2],-h,0], [gsX[3],-h,0], [gsX[3],0,0], [6,0,0]],
-    '6': [[-6,0,0], [gsX[1],0,0], [gsX[1],h*0.5,0], [gsX[2],h*0.5,0], [gsX[2],0,0], [gsX[3],0,0], [6,0,0]],
-    '7': [[-6,0,0], [gsX[1],0,0], [gsX[1],-h,0], [gsX[2],-h,0], [gsX[3],-h,0], [gsX[3],0,0], [6,0,0]],
-    '8': [[-6,0,0], [gsX[1],0,0], [gsX[1],-h,0], [gsX[3],-h,0], [gsX[3],0,0], [6,0,0]],
-    'R': [[-6,0,0], [gsX[1],0,0], [gsX[0],0,0], [gsX[0],h,0], [gsX[3],h,0], [gsX[3],0,0], [6,0,0]],
+    // 1st (A,B,C): Input → C → GS4 sun; GS1 locked (A+B) holds GS4 ring → Output
+    '1': [
+        [inX,0,0], [gsX[1],0,0],                          // input shaft to GS2 carrier
+        [cX.C,0,0], [cX.C,cY.C,0],                        // up to Clutch C
+        [gsX[3],cY.C,0], [gsX[3],0,0],                    // through GS4 → down to output
+        [outX,0,0],
+    ],
+    // 2nd (A,B,E): Input → GS2 → GS2 ring → GS3 (locked via E) → GS4 sun → Output
+    '2': [
+        [inX,0,0], [gsX[1],0,0],                          // input to GS2 carrier
+        [gsX[1],cY.E,0], [cX.E,cY.E,0],                   // up through GS2 ring to Clutch E
+        [gsX[3],cY.E,0], [gsX[3],0,0],                    // GS3→GS4 sun → down to output
+        [outX,0,0],
+    ],
+    // 3rd (B,C,E): Input → C → GS4 sun + Input → GS2 → E → GS4 → Output
+    '3': [
+        [inX,0,0], [gsX[1],0,0],                          // input shaft
+        [cX.C,0,0], [cX.C,cY.C,0],                        // up to Clutch C
+        [gsX[3],cY.C,0], [gsX[3],0,0],                    // through GS4
+        [outX,0,0],
+    ],
+    // 4th (B,C,D): Input → C → GS4 + Input → GS2 → GS3 carrier → D → Output
+    '4': [
+        [inX,0,0], [gsX[1],0,0],                          // input shaft
+        [gsX[2],0,0], [gsX[2],cY.D,0],                    // through GS2 → GS3 carrier
+        [cX.D,cY.D,0],                                    // through Clutch D
+        [cX.D,0,0], [outX,0,0],                           // down to output
+    ],
+    // 5th (C,D,E): Input → C → GS4 sun → GS3 (locked via E) → D → Output
+    '5': [
+        [inX,0,0], [cX.C,0,0], [cX.C,cY.C,0],            // input up to Clutch C
+        [gsX[3],cY.C,0], [gsX[3],cY.D,0],                 // GS4 sun → GS3
+        [cX.D,cY.D,0],                                    // through Clutch D
+        [cX.D,0,0], [outX,0,0],                           // down to output
+    ],
+    // 6th (B,D,E): Input → GS2 → GS3 (locked via E) → D → Output, 1:1
+    '6': [
+        [inX,0,0], [gsX[1],0,0],                          // input to GS2
+        [gsX[2],0,0], [gsX[2],cY.D,0],                    // through GS2/GS3
+        [cX.D,cY.D,0],                                    // through Clutch D
+        [cX.D,0,0], [outX,0,0],                           // to output
+    ],
+    // 7th (A,D,E): Input → GS2 (sun=0) → ring → GS3 (locked via E) → D → Output
+    '7': [
+        [inX,0,0], [gsX[1],0,0],                          // input to GS2
+        [gsX[1],cY.E,0], [cX.E,cY.E,0],                   // up to GS2 ring → Clutch E
+        [gsX[3],cY.E,0], [gsX[3],cY.D,0],                 // GS3 locked
+        [cX.D,cY.D,0],                                    // through Clutch D
+        [cX.D,0,0], [outX,0,0],                           // to output
+    ],
+    // 8th (A,C,D): Input → C → GS4 + GS2 → GS3 → D → Output
+    '8': [
+        [inX,0,0], [gsX[1],0,0],                          // input shaft
+        [gsX[2],0,0], [gsX[2],cY.D,0],                    // through GS2 → GS3
+        [cX.D,cY.D,0],                                    // through Clutch D
+        [cX.D,0,0], [outX,0,0],                           // to output
+    ],
+    // Reverse (A,B,D): Input → GS2 → GS3 carrier → D → Output (reversed)
+    'R': [
+        [inX,0,0], [gsX[1],0,0],                          // input to GS2
+        [gsX[2],0,0], [gsX[2],cY.D,0],                    // through GS2 → GS3
+        [cX.D,cY.D,0],                                    // through Clutch D
+        [cX.D,0,0], [outX,0,0],                           // to output
+    ],
 };
 
 // Build flow arrow meshes
 let flowMeshes = [];
-const FLOW_COLOR = 0xe85d20;
+const FLOW_COLOR = 0x66dd88;
 
 function buildFlowArrows(gear) {
     flowMeshes.forEach(m => { flowGroup.remove(m); m.geometry?.dispose(); m.material?.dispose(); });
