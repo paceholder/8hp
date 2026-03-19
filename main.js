@@ -571,7 +571,10 @@ GS_SPEC.forEach((spec, idx) => {
     // Ring
     const ringOuterR = ringPitchR + M * 1.8;
     const ringGeo = makeInternalGear(M, spec.ring, FW * 0.88, ringOuterR);
-    const ringMesh = new THREE.Mesh(ringGeo, mat(PAL.ring, { metalness: 0.05, roughness: 0.85, transparent: true, opacity: 0.78 }));
+    const ringMesh = new THREE.Mesh(ringGeo, mat(PAL.ring, {
+        metalness: 0.05, roughness: 0.85, transparent: true, opacity: 0.78,
+        polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1,
+    }));
     ringMesh.position.x = x;
     ringMesh.castShadow = true;
     ringMesh.receiveShadow = true;
@@ -1179,11 +1182,9 @@ function setGear(gear) {
         if (opacity >= 0.8) {
             m.transparent = false;
             m.depthWrite = true;
-            m.side = THREE.FrontSide;
         } else {
             m.transparent = true;
             m.depthWrite = false;
-            m.side = THREE.DoubleSide;
         }
         m.needsUpdate = true;
     }
@@ -1202,6 +1203,7 @@ function setGear(gear) {
         const col = sColor(key);
         const on = isMoving(key);
         setM(mesh.material, col, on ? 0.85 : inactiveOpacity * 0.75, 0x000000, 0);
+        mesh.visible = on || inactiveOpacity > 0.05;
         mesh.renderOrder = on ? 1 : 0;
     });
 
