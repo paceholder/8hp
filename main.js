@@ -565,6 +565,11 @@ const DRUM_STYLES = [
 function addDrum(innerR, outerR, xStart, xEnd, color, labelText) {
     const len = Math.abs(xEnd - xStart);
     const xMid = (xStart + xEnd) / 2;
+
+    // Everything in one group so it all rotates together
+    const grp = new THREE.Group();
+    grp.position.x = xMid;
+
     const geo = makeTube(innerR, outerR, len);
     const drumMat = new THREE.MeshStandardMaterial({
         color: color,
@@ -576,66 +581,69 @@ function addDrum(innerR, outerR, xStart, xEnd, color, labelText) {
         depthWrite: false,
     });
     const mesh = new THREE.Mesh(geo, drumMat);
-    mesh.position.x = xMid;
     mesh.renderOrder = 1;
-    gearGrp.add(mesh);
+    grp.add(mesh);
 
-    // Stripe on drum so rotation is visible
+    // Wide bold stripes on drum so rotation is unmissable
     const nStripes = 3;
     for (let i = 0; i < nStripes; i++) {
         const a = (i / nStripes) * Math.PI * 2;
-        const sGeo = new THREE.BoxGeometry(len * 0.98, 0.03, outerR * 0.15);
-        const sMat = new THREE.MeshStandardMaterial({ color: 0x222222, metalness: 0, roughness: 1 });
+        // Make stripes much wider and thicker
+        const sGeo = new THREE.BoxGeometry(len * 0.96, outerR * 0.25, 0.04);
+        const darkerColor = new THREE.Color(color).multiplyScalar(0.3);
+        const sMat = new THREE.MeshStandardMaterial({
+            color: darkerColor, metalness: 0, roughness: 1,
+        });
         const stripe = new THREE.Mesh(sGeo, sMat);
-        stripe.position.set(xMid, Math.cos(a) * outerR, Math.sin(a) * outerR);
+        stripe.position.set(0, Math.cos(a) * (outerR + 0.02), Math.sin(a) * (outerR + 0.02));
         stripe.rotation.x = a;
-        gearGrp.add(stripe);
-        // Group stripe with drum for rotation
-        parts.drums.push({ mesh: stripe, type: 'stripe' });
+        grp.add(stripe);
     }
 
-    // End flanges (discs at both ends)
-    [xStart, xEnd].forEach(xPos => {
+    // End flanges
+    const halfLen = len / 2;
+    [-halfLen, halfLen].forEach(xOff => {
         const flangeGeo = new THREE.RingGeometry(innerR, outerR, 32);
         const flange = new THREE.Mesh(flangeGeo, drumMat.clone());
         flange.rotation.y = Math.PI / 2;
-        flange.position.x = xPos;
+        flange.position.x = xOff;
         flange.material.opacity = 0.5;
-        gearGrp.add(flange);
+        grp.add(flange);
     });
 
-    return { mesh, innerR, outerR, xMid, len };
+    gearGrp.add(grp);
+    return { group: grp, drumMat, innerR, outerR, xMid, len };
 }
 
 // Sun shaft drum: wraps around GS1 & GS2 sun gears (this is what Brake A grabs)
 const sunR = GS_SPEC[0].sun * M / 2;
 const drum_sunShaft = addDrum(sunR + M * 1.2, sunR + M * 1.2 + 0.08,
     gsX[0] - FW * 0.5, gsX[1] + FW * 0.5, DRUM_STYLES[0].color);
-parts.drums.push({ mesh: drum_sunShaft.mesh, speedKey: 'gs1_sun', type: 'drum' });
+parts.drums.push({ group: drum_sunShaft.group, speedKey: 'gs1_sun', type: 'drum', drumMat: drum_sunShaft.drumMat });
 
 // GS1 carrier → GS4 ring drum
 const carrierR = (sunR + GS_SPEC[0].ring * M / 2) / 2;
 const drum_gs1c_gs4r = addDrum(carrierR + 0.12, carrierR + 0.2,
     gsX[0] - FW * 0.3, gsX[3] + FW * 0.3, DRUM_STYLES[1].color);
-parts.drums.push({ mesh: drum_gs1c_gs4r.mesh, speedKey: 'gs1_carrier', type: 'drum' });
+parts.drums.push({ group: drum_gs1c_gs4r.group, speedKey: 'gs1_carrier', type: 'drum', drumMat: drum_gs1c_gs4r.drumMat });
 
 // GS2 ring → GS3 sun drum
 const gs2ringR = GS_SPEC[1].ring * M / 2;
 const drum_gs2r_gs3s = addDrum(gs2ringR + M * 2 + 0.05, gs2ringR + M * 2 + 0.13,
     gsX[1] - FW * 0.2, gsX[2] + FW * 0.2, DRUM_STYLES[2].color);
-parts.drums.push({ mesh: drum_gs2r_gs3s.mesh, speedKey: 'gs2_ring', type: 'drum' });
+parts.drums.push({ group: drum_gs2r_gs3s.group, speedKey: 'gs2_ring', type: 'drum', drumMat: drum_gs2r_gs3s.drumMat });
 
 // GS3 ring → GS4 sun drum
 const gs3ringR = GS_SPEC[2].ring * M / 2;
 const drum_gs3r_gs4s = addDrum(gs3ringR + M * 2 + 0.05, gs3ringR + M * 2 + 0.13,
     gsX[2] - FW * 0.2, gsX[3] + FW * 0.2, DRUM_STYLES[3].color);
-parts.drums.push({ mesh: drum_gs3r_gs4s.mesh, speedKey: 'gs3_ring', type: 'drum' });
+parts.drums.push({ group: drum_gs3r_gs4s.group, speedKey: 'gs3_ring', type: 'drum', drumMat: drum_gs3r_gs4s.drumMat });
 
 // GS4 carrier → output drum
 const gs4carrierR = (GS_SPEC[3].sun * M / 2 + GS_SPEC[3].ring * M / 2) / 2;
 const drum_output = addDrum(gs4carrierR + 0.1, gs4carrierR + 0.18,
     gsX[3] - FW * 0.3, gsX[3] + FW + 0.5, DRUM_STYLES[4].color);
-parts.drums.push({ mesh: drum_output.mesh, speedKey: 'gs4_carrier', type: 'drum' });
+parts.drums.push({ group: drum_output.group, speedKey: 'gs4_carrier', type: 'drum', drumMat: drum_output.drumMat });
 
 // ── Shafts ───────────────────────────────────────────────────────────────────
 
@@ -1030,24 +1038,23 @@ let animSpeed = 1.5;
 // POWER FLOW ARROWS — animated dashed tubes showing torque path
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Flow arrows live in a SEPARATE scene so they render on top of the
+// post-processed main scene (SAO composer ignores renderOrder/depthTest)
+const flowScene = new THREE.Scene();
 const flowGroup = new THREE.Group();
-root.add(flowGroup);
+flowScene.add(flowGroup);
 
 // Power flow path definitions per gear: sequences of 3D points
 // Each path segment: [startVec3, endVec3]
 // The flow goes: Input shaft → (through gear sets via engaged elements) → Output shaft
 const FLOW_PATHS = {
     '1': [
-        // Input → GS2 carrier → GS1(brakeA grounds sun, brakeB grounds ring) → GS4 carrier(output)
-        // Simplified: input shaft → GS2 → GS1 → GS4 → output
+        // Input → TC → GS2 carrier → GS1 carrier (via drum) → GS4 ring → GS4 carrier → output
         { from: [-6, 0, 0], to: [gsX[1], 0, 0], label: 'Input→TC→GS2' },
-        { from: [gsX[1], 0, 0], to: [gsX[1], 1.2, 0], label: 'GS2 carrier' },
-        { from: [gsX[1], 1.2, 0], to: [gsX[0], 1.2, 0], label: '' },
-        { from: [gsX[0], 1.2, 0], to: [gsX[0], 0, 0], label: 'GS1' },
-        { from: [gsX[0], 0, 0], to: [gsX[3], 0, 0], label: 'Shaft→GS4' },
-        { from: [gsX[3], 0, 0], to: [gsX[3], -1.2, 0], label: 'GS4' },
-        { from: [gsX[3], -1.2, 0], to: [6, -1.2, 0], label: '' },
-        { from: [6, -1.2, 0], to: [6, 0, 0], label: 'Output' },
+        { from: [gsX[1], 0, 1.5], to: [gsX[0], 0, 1.5], label: 'GS2→GS1' },
+        { from: [gsX[0], 0, 1.5], to: [gsX[3], 0, 1.5], label: 'GS1 carrier→GS4 ring' },
+        { from: [gsX[3], 0, 1.5], to: [gsX[3], 0, 0], label: 'GS4' },
+        { from: [gsX[3], 0, 0], to: [6, 0, 0], label: 'Output' },
     ],
     '2': [
         { from: [-6, 0, 0], to: [gsX[1], 0, 0], label: 'Input→TC→GS2' },
@@ -1346,10 +1353,10 @@ function animate() {
     if (parts.tcImpeller) parts.tcImpeller.rotation.x += (curSpeeds.input || 0) * V * dt;
     if (parts.tcTurbine) parts.tcTurbine.rotation.x += (curSpeeds.input || 0) * V * dt * 0.92;
 
-    // Drums — rotate with their associated shaft speed
+    // Drums — rotate the whole group (shell + stripes + flanges together)
     parts.drums.forEach(d => {
-        if (d.speedKey && d.mesh) {
-            d.mesh.rotation.x += (curSpeeds[d.speedKey] || 0) * V * dt;
+        if (d.speedKey && d.group) {
+            d.group.rotation.x += (curSpeeds[d.speedKey] || 0) * V * dt;
         }
     });
 
@@ -1396,6 +1403,12 @@ function animate() {
 
     controls.update();
     composer.render();
+
+    // Render flow arrows on top — clear only depth, keep color from composer
+    renderer.autoClear = false;
+    renderer.clearDepth();
+    renderer.render(flowScene, camera);
+    renderer.autoClear = true;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1426,9 +1439,9 @@ document.getElementById('drum-opacity').addEventListener('input', e => {
     const v = e.target.value / 100;
     document.getElementById('drum-opacity-val').textContent = `${e.target.value}%`;
     parts.drums.forEach(d => {
-        if (d.type === 'drum' && d.mesh && d.mesh.material) {
-            d.mesh.material.opacity = v;
-            d.mesh.material.needsUpdate = true;
+        if (d.type === 'drum' && d.drumMat) {
+            d.drumMat.opacity = v;
+            d.drumMat.needsUpdate = true;
         }
     });
 });
