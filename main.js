@@ -80,13 +80,17 @@ controls.enableRotate = false; // rotation handled by modelPivot drag
 controls.enablePan = true;
 controls.zoomToCursor = true;
 
-// Turntable drag — rotate modelPivot, floor stays fixed
+// Arcball-style drag — rotate modelPivot around world axes, floor stays fixed
 {
     let dragging = false, prevX = 0, prevY = 0;
     const canvas = renderer.domElement;
+    const _qY = new THREE.Quaternion();
+    const _qX = new THREE.Quaternion();
+    const _axisY = new THREE.Vector3(0, 1, 0);
+    const _axisX = new THREE.Vector3();
+
     canvas.addEventListener('pointerdown', e => {
-        if (e.button !== 0) return; // left button only
-        // Don't start drag if clicking on UI
+        if (e.button !== 0) return;
         if (e.target !== canvas) return;
         dragging = true;
         prevX = e.clientX;
@@ -98,8 +102,12 @@ controls.zoomToCursor = true;
         const dy = e.clientY - prevY;
         prevX = e.clientX;
         prevY = e.clientY;
-        modelPivot.rotation.y += dx * 0.005;
-        modelPivot.rotation.z += dy * 0.005;
+        // Horizontal drag → rotate around world Y
+        _qY.setFromAxisAngle(_axisY, dx * 0.005);
+        // Vertical drag → rotate around camera's right vector (world space)
+        _axisX.set(1, 0, 0).applyQuaternion(camera.quaternion);
+        _qX.setFromAxisAngle(_axisX, dy * 0.005);
+        modelPivot.quaternion.premultiply(_qY).premultiply(_qX);
     });
     window.addEventListener('pointerup', () => { dragging = false; });
 }
@@ -1659,7 +1667,7 @@ function animate() {
     controls.update();
 
     // Sync flow arrows rotation with model pivot
-    flowGroup.rotation.copy(modelPivot.rotation);
+    flowGroup.quaternion.copy(modelPivot.quaternion);
 
     composer.render();
 
