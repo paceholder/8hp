@@ -407,10 +407,17 @@ function makeCarrier(ir, or, length, nArms = 4) {
     return g;
 }
 
-/** Clutch pack: alternating steel + friction discs in a drum */
+/** Clutch pack: alternating steel + friction discs in a drum, with radial stripes */
 function makeClutchPack(ir, or, length, nDiscs) {
     const g = new THREE.Group();
     const gap = length / (nDiscs + 1);
+    const nStripes = 3;
+    const stripeW = 0.03;
+    const stripeD = (or - ir) * 0.92;
+    const stripeMat = new THREE.MeshStandardMaterial({
+        color: 0x444444, metalness: 0, roughness: 1, side: THREE.DoubleSide,
+    });
+    stripeMat.userData = { isSteel: true, isDrum: false };
 
     for (let i = 0; i < nDiscs; i++) {
         const x = -length / 2 + gap * (i + 1);
@@ -428,6 +435,17 @@ function makeClutchPack(ir, or, length, nDiscs) {
         disc.position.x = x;
         disc.castShadow = true;
         g.add(disc);
+
+        // Radial stripes on each disc face so rotation is visible
+        for (let s = 0; s < nStripes; s++) {
+            const a = (s / nStripes) * Math.PI * 2;
+            const midR = (ir + or) / 2;
+            const stripeGeo = new THREE.BoxGeometry(0.005, stripeW, stripeD);
+            const stripe = new THREE.Mesh(stripeGeo, stripeMat);
+            stripe.position.set(x, Math.cos(a) * midR, Math.sin(a) * midR);
+            stripe.rotation.x = a;
+            g.add(stripe);
+        }
     }
 
     // Drum shell
@@ -727,6 +745,15 @@ const cSpecs = {
     C: { ir: 0.55, or: 1.0,   len: 0.5,  nDiscs: 6,  x: (gsX[2] + gsX[3]) / 2 },
     D: { ir: 0.28, or: 0.72,  len: 0.5,  nDiscs: 6,  x: gsX[3] + FW * 0.72 },
     E: { ir: GS_SPEC[2].sun * M / 2 + M * 0.5, or: GS_SPEC[2].ring * M / 2 - M * 0.5, len: 0.45, nDiscs: 6, x: gsX[2] + FW * 0.6 },
+};
+
+// Speed key for each clutch — what member speed drives it
+const CLUTCH_SPEED_KEYS = {
+    A: 'gs1_sun',      // Brake A: GS1/GS2 sun → case
+    B: 'gs1_ring',     // Brake B: GS1 ring → case
+    C: 'input',        // Clutch C: input → GS4 sun
+    D: 'gs3_carrier',  // Clutch D: GS3 carrier → output
+    E: 'gs3_sun',      // Clutch E: GS3 sun ↔ GS3 ring
 };
 
 Object.entries(cSpecs).forEach(([name, s]) => {
@@ -1317,10 +1344,12 @@ function animate() {
         }
     });
 
-    // Engaged clutch pulse
+    // Clutch rotation + engaged pulse
     const { engaged } = GEAR_DATA[currentGear];
     ['A','B','C','D','E'].forEach(el => {
         const g = parts.clutches[el];
+        const speedKey = CLUTCH_SPEED_KEYS[el];
+        g.rotation.x += (curSpeeds[speedKey] || 0) * V * dt;
         if (engaged.includes(el)) {
             const p = 1 + Math.sin(t * 4) * 0.02;
             g.scale.set(1, p, p);
