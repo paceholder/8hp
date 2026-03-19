@@ -1617,15 +1617,28 @@ function animate() {
     });
 
     // Planets — orbit position + absolute rotation (carrier + rolling on sun)
+    // Check which gear sets are locked (all elements same speed → no planet self-spin)
+    const { engaged } = GEAR_DATA[currentGear];
+    const gsLocked = [false, false, false, false];
+    // Clutch E locks GS3
+    if (engaged.includes('E')) gsLocked[2] = true;
+    // 6th gear (direct drive) — everything locked
+    if (currentGear === '6') { gsLocked[0] = gsLocked[1] = gsLocked[2] = gsLocked[3] = true; }
+
     parts.planets.forEach(p => {
         const cs = curSpeeds[`gs${p.idx + 1}_carrier`] || 0;
         const ss = curSpeeds[`gs${p.idx + 1}_sun`] || 0;
         p.angle += cs * V * dt;
         p.mesh.position.y = Math.cos(p.angle) * p.orbitR;
         p.mesh.position.z = Math.sin(p.angle) * p.orbitR;
-        const sunT = GS_SPEC[p.idx].sun;
-        // Absolute planet rotation = carrier orbit + self-spin from sun-planet mesh
-        p.mesh.rotation.x += (cs + (cs - ss) * (sunT / p.pTeeth)) * V * dt;
+
+        if (gsLocked[p.idx]) {
+            // Gear set is locked — planets just ride with the carrier, no self-spin
+            p.mesh.rotation.x += cs * V * dt;
+        } else {
+            const sunT = GS_SPEC[p.idx].sun;
+            p.mesh.rotation.x += (cs + (cs - ss) * (sunT / p.pTeeth)) * V * dt;
+        }
     });
 
     // Torque converter — impeller at input speed, turbine slightly slower (slip)
