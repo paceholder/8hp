@@ -81,6 +81,7 @@ controls.maxDistance = 80;
 controls.minPolarAngle = 0;
 controls.maxPolarAngle = Math.PI;
 controls.enablePan = true;
+controls.zoomToCursor = true;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // LIGHTING — soft, technical, from all angles
