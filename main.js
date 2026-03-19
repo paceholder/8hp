@@ -376,28 +376,39 @@ function makeVisibleShaft(radius, length, nStripes = 4, baseColor = 0xbbbbbb, st
     return g;
 }
 
-/** Planet carrier with discs + arms */
-function makeCarrier(ir, or, length, nArms = 4) {
+/** Planet carrier with narrow ring plates + pin bosses + arms */
+function makeCarrier(ir, or, length, nArms, planetOrbitR, planetR) {
     const g = new THREE.Group();
     const mat = new THREE.MeshStandardMaterial({ color: PAL.carrier, metalness: 0.05, roughness: 0.9, side: THREE.DoubleSide });
 
-    // Top & bottom plates (thin discs)
-    const discGeo = new THREE.RingGeometry(ir, or, 48);
+    // Narrow hub ring (center, around shaft)
+    const hubOr = ir + 0.08;
+    const hubGeo = new THREE.RingGeometry(ir, hubOr, 48);
+
+    // Outer ring (around planet orbit, narrow band)
+    const outerIr = planetOrbitR + planetR * 0.6;
+    const outerGeo = new THREE.RingGeometry(outerIr, or, 48);
+
     [length / 2, -length / 2].forEach(x => {
-        const d = new THREE.Mesh(discGeo, mat);
-        d.rotation.y = Math.PI / 2;
-        d.position.x = x;
-        d.castShadow = true;
-        d.receiveShadow = true;
-        g.add(d);
+        // Hub disc
+        const hub = new THREE.Mesh(hubGeo, mat);
+        hub.rotation.y = Math.PI / 2;
+        hub.position.x = x;
+        g.add(hub);
+        // Outer ring
+        const outer = new THREE.Mesh(outerGeo, mat);
+        outer.rotation.y = Math.PI / 2;
+        outer.position.x = x;
+        g.add(outer);
     });
 
-    // Cross-arms
-    const armW = 0.08, armD = (or - ir) * 0.85;
-    const armGeo = new THREE.BoxGeometry(length * 0.98, armW, armD);
+    // Radial arms connecting hub to outer ring
+    const armW = 0.06;
+    const armD = outerIr - hubOr;
+    const armGeo = new THREE.BoxGeometry(length * 0.95, armW, armD);
     for (let i = 0; i < nArms; i++) {
         const a = (i / nArms) * Math.PI * 2;
-        const r = (ir + or) * 0.52;
+        const r = (hubOr + outerIr) / 2;
         const arm = new THREE.Mesh(armGeo, mat);
         arm.position.set(0, Math.cos(a) * r, Math.sin(a) * r);
         arm.rotation.x = a;
@@ -566,7 +577,7 @@ GS_SPEC.forEach((spec, idx) => {
     parts.rings.push({ mesh: ringMesh, idx, teeth: spec.ring });
 
     // Carrier
-    const carrier = makeCarrier(0.2, planetOrbitR + planetPitchR * 0.45, FW * 0.9, 4);
+    const carrier = makeCarrier(0.2, planetOrbitR + planetPitchR * 0.45, FW * 0.9, 4, planetOrbitR, planetPitchR + M);
     carrier.position.x = x;
     gsGroup.add(carrier);
     parts.carriers.push({ mesh: carrier, idx });
