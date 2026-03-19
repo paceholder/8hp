@@ -1679,7 +1679,6 @@ function animate() {
     });
 
     // Clutch rotation + engaged pulse
-    const { engaged } = GEAR_DATA[currentGear];
     ['A','B','C','D','E'].forEach(el => {
         const g = parts.clutches[el];
         const speedKey = CLUTCH_SPEED_KEYS[el];
