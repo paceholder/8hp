@@ -1047,26 +1047,54 @@ function buildFlowArrows(gear) {
     }
 }
 
-// Which gear sets are "active" (in the power path) per gear
-const GS_ACTIVE = {
-    'R': [0,1,2,3], '1': [0,1,3], '2': [0,1,2,3], '3': [1,2,3],
-    '4': [1,2,3], '5': [2,3], '6': [0,1,2,3], '7': [0,1,2,3], '8': [0,1,2,3],
-};
+// ─────────────────────────────────────────────────────────────────────────────
+// VELOCITY-BASED COLORING — parts at the same angular velocity share a color
+// ─────────────────────────────────────────────────────────────────────────────
 
-// Colors for active vs inactive parts
-const ACTIVE_COLORS = {
-    sun:     0xd4a820,
-    ring:    0x5580b0,
-    planet:  0x7099bb,
-    carrier: 0x6088a0,
-};
-const INACTIVE_GRAY = 0xcccccc;
+const VELOCITY_PALETTE = [
+    0x5588cc, // blue
+    0xcc5588, // rose
+    0x55bb99, // teal
+    0xbb7744, // amber
+    0x8866bb, // purple
+    0xcc9933, // ochre
+    0x669977, // sage
+    0xaa5577, // mauve
+];
+
+/** Given a speed map, return a Map<roundedSpeed, color> */
+function assignSpeedColors(speeds) {
+    const round = v => Math.round(v * 10000) / 10000;
+    const unique = [...new Set(Object.values(speeds).map(round))].sort((a, b) => a - b);
+
+    const colorMap = new Map();
+    colorMap.set(round(0), 0x999999);           // grounded = gray
+    colorMap.set(round(1), PAL.inputShaft);      // input speed = gold
+    const outR = round(speeds.output);
+    if (!colorMap.has(outR)) colorMap.set(outR, PAL.outputShaft); // output = green
+
+    let pi = 0;
+    for (const s of unique) {
+        if (!colorMap.has(s)) {
+            colorMap.set(s, VELOCITY_PALETTE[pi % VELOCITY_PALETTE.length]);
+            pi++;
+        }
+    }
+    return colorMap;
+}
+
+function colorForSpeed(speed, colorMap) {
+    const r = Math.round(speed * 10000) / 10000;
+    for (const [s, c] of colorMap) {
+        if (Math.abs(r - s) < 0.0002) return c;
+    }
+    return 0xcccccc;
+}
 
 function setGear(gear) {
     currentGear = gear;
     targetSpeeds = solveSpeeds(gear);
     const d = GEAR_DATA[gear];
-    const activeGS = GS_ACTIVE[gear];
 
     // UI
     document.querySelectorAll('.gear-btn').forEach(b => b.classList.toggle('active', b.dataset.gear === gear));
@@ -1079,9 +1107,14 @@ function setGear(gear) {
     // Rebuild flow arrows
     buildFlowArrows(gear);
 
-    // Helper: near-opaque parts use normal depth writing to avoid
-    // z-fighting / bleed-through on gear teeth. Only genuinely
-    // translucent parts (opacity < 0.8) go through the transparent path.
+    // ── Velocity-based color assignment
+    const speeds = targetSpeeds;
+    const cMap = assignSpeedColors(speeds);
+
+    function sColor(key) { return colorForSpeed(speeds[key] || 0, cMap); }
+    function isMoving(key) { return Math.abs(speeds[key] || 0) > 0.001; }
+
+    // Helper: near-opaque parts use normal depth writing; translucent use transparent path
     function setM(m, color, opacity, emHex, emInt) {
         m.color.setHex(color);
         m.opacity = opacity;
@@ -1099,46 +1132,41 @@ function setGear(gear) {
         m.needsUpdate = true;
     }
 
-    // ── Gear sets: active = colored, inactive = gray ghost
+    // ── Gear sets: colored by angular velocity
     parts.suns.forEach(({ mesh, idx }) => {
-        const on = activeGS.includes(idx);
-        setM(mesh.material,
-            on ? ACTIVE_COLORS.sun : INACTIVE_GRAY,
-            on ? 0.95 : 0.15,
-            on ? 0x1a0800 : 0x000000,
-            on ? 0.2 : 0);
+        const key = `gs${idx + 1}_sun`;
+        const col = sColor(key);
+        const on = isMoving(key);
+        setM(mesh.material, col, on ? 0.95 : 0.4, 0x000000, 0);
         mesh.renderOrder = on ? 2 : 0;
     });
 
     parts.rings.forEach(({ mesh, idx }) => {
-        const on = activeGS.includes(idx);
-        setM(mesh.material,
-            on ? ACTIVE_COLORS.ring : INACTIVE_GRAY,
-            on ? 0.85 : 0.1,
-            on ? 0x001122 : 0x000000,
-            on ? 0.15 : 0);
+        const key = `gs${idx + 1}_ring`;
+        const col = sColor(key);
+        const on = isMoving(key);
+        setM(mesh.material, col, on ? 0.85 : 0.3, 0x000000, 0);
         mesh.renderOrder = on ? 1 : 0;
     });
 
     parts.carriers.forEach(({ mesh, idx }) => {
-        const on = activeGS.includes(idx);
+        const key = `gs${idx + 1}_carrier`;
+        const col = sColor(key);
+        const on = isMoving(key);
         mesh.traverse(ch => {
             if (!ch.isMesh) return;
-            setM(ch.material,
-                on ? ACTIVE_COLORS.carrier : INACTIVE_GRAY,
-                on ? 0.92 : 0.15,
-                0x000000, 0);
+            setM(ch.material, col, on ? 0.92 : 0.35, 0x000000, 0);
             ch.material.side = THREE.DoubleSide; // flat planes need DoubleSide
             ch.renderOrder = on ? 2 : 0;
         });
     });
 
     parts.planets.forEach(p => {
-        const on = activeGS.includes(p.idx);
-        setM(p.mesh.material,
-            on ? ACTIVE_COLORS.planet : INACTIVE_GRAY,
-            on ? 0.95 : 0.15,
-            0x000000, 0);
+        // Planets orbit with carrier — color by carrier speed
+        const key = `gs${p.idx + 1}_carrier`;
+        const col = sColor(key);
+        const on = isMoving(key);
+        setM(p.mesh.material, col, on ? 0.95 : 0.35, 0x000000, 0);
         p.mesh.renderOrder = on ? 2 : 0;
     });
 
@@ -1157,7 +1185,7 @@ function setGear(gear) {
                     on ? 0.7 : 0);
             } else {
                 setM(m,
-                    on ? (m.userData?.isSteel ? 0xee8844 : 0xdd5522) : INACTIVE_GRAY,
+                    on ? (m.userData?.isSteel ? 0xee8844 : 0xdd5522) : 0xcccccc,
                     on ? 0.95 : 0.06,
                     on ? 0x551800 : 0x000000,
                     on ? 0.4 : 0);
@@ -1167,24 +1195,36 @@ function setGear(gear) {
         });
     });
 
-    // Input/output shafts — always vivid
+    // ── Shafts: colored by velocity
+    const inpCol = sColor('input');
     parts.inputShaft.traverse(ch => {
         if (!ch.isMesh) return;
-        if (ch.material.color.getHex() !== 0x222222 && ch.material.color.getHex() !== 0x444450) {
-            ch.material.color.setHex(PAL.inputShaft);
-            ch.material.emissive.setHex(0x1a0a00);
-            ch.material.emissiveIntensity = 0.2;
-        }
+        ch.material.color.setHex(inpCol);
+        ch.material.emissive.setHex(0x1a0a00);
+        ch.material.emissiveIntensity = 0.2;
     });
+    const outCol = sColor('output');
     parts.outputShaft.traverse(ch => {
         if (!ch.isMesh) return;
-        if (ch.material.color.getHex() !== 0x222222 && ch.material.color.getHex() !== 0x444450) {
-            ch.material.color.setHex(PAL.outputShaft);
-            ch.material.emissive.setHex(0x0a1a00);
-            ch.material.emissiveIntensity = 0.2;
-        }
+        ch.material.color.setHex(outCol);
+        ch.material.emissive.setHex(0x0a1a00);
+        ch.material.emissiveIntensity = 0.2;
     });
 
+    // ── Torque drums: colored by velocity
+    parts.drums.forEach(dr => {
+        if (!dr.speedKey || !dr.drumMat) return;
+        const col = sColor(dr.speedKey);
+        dr.drumMat.color.setHex(col);
+        dr.drumMat.needsUpdate = true;
+        // Also color the stripes darker shade
+        dr.group.traverse(ch => {
+            if (!ch.isMesh) return;
+            if (ch.material !== dr.drumMat && !ch.material.transparent) {
+                ch.material.color.copy(new THREE.Color(col).multiplyScalar(0.3));
+            }
+        });
+    });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
