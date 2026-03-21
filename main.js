@@ -431,8 +431,11 @@ function makeVisibleShaft(radius, length, nStripes = 4, baseColor = 0xbbbbbb, st
     return g;
 }
 
-/** Planet carrier with narrow ring plates + pin bosses + arms */
-function makeCarrier(ir, or, length, nArms, planetOrbitR, planetR) {
+/** Planet carrier with narrow ring plates + pin bosses + arms
+ *  openSide: 'engine' = no outer ring/arms on -X side,
+ *            'tail'   = no outer ring/arms on +X side,
+ *            null     = both sides */
+function makeCarrier(ir, or, length, nArms, planetOrbitR, planetR, openSide) {
     const g = new THREE.Group();
     const mat = new THREE.MeshStandardMaterial({ color: PAL.carrier, metalness: 0.05, roughness: 0.9, side: THREE.DoubleSide });
 
@@ -444,30 +447,36 @@ function makeCarrier(ir, or, length, nArms, planetOrbitR, planetR) {
     const outerIr = planetOrbitR + planetR * 0.6;
     const outerGeo = new THREE.RingGeometry(outerIr, or, 48);
 
-    [length / 2, -length / 2].forEach(x => {
-        // Hub disc
+    // sides: [+X (tail), -X (engine)]
+    const sides = [{x: length / 2, side: 'tail'}, {x: -length / 2, side: 'engine'}];
+    sides.forEach(({x, side}) => {
+        // Hub disc on both sides
         const hub = new THREE.Mesh(hubGeo, mat);
         hub.rotation.y = Math.PI / 2;
         hub.position.x = x;
         g.add(hub);
-        // Outer ring
-        const outer = new THREE.Mesh(outerGeo, mat);
-        outer.rotation.y = Math.PI / 2;
-        outer.position.x = x;
-        g.add(outer);
+        // Outer ring only on non-open side
+        if (side !== openSide) {
+            const outer = new THREE.Mesh(outerGeo, mat);
+            outer.rotation.y = Math.PI / 2;
+            outer.position.x = x;
+            g.add(outer);
+        }
     });
 
-    // Radial arms connecting hub to outer ring (thin rods at each end plate)
+    // Radial arms connecting hub to outer ring
     const armRadius = 0.022;
     const armLen = outerIr - hubOr;
     const armGeo = new THREE.CylinderGeometry(armRadius, armRadius, armLen, 8);
+    const armOffsets = [];
+    if (openSide !== 'tail') armOffsets.push(length * 0.45);
+    if (openSide !== 'engine') armOffsets.push(-length * 0.45);
     for (let i = 0; i < nArms; i++) {
         const a = (i / nArms) * Math.PI * 2;
         const midR = (hubOr + outerIr) / 2;
-        for (const xOff of [length * 0.45, -length * 0.45]) {
+        for (const xOff of armOffsets) {
             const arm = new THREE.Mesh(armGeo, mat);
             arm.position.set(xOff, Math.cos(a) * midR, Math.sin(a) * midR);
-            // CylinderGeometry axis is Y; rotate around X by angle `a` to point radially
             arm.rotation.x = a;
             arm.castShadow = true;
             g.add(arm);
@@ -661,8 +670,9 @@ GS_SPEC.forEach((spec, idx) => {
     gsGroup.add(ringMesh);
     parts.rings.push({ mesh: ringMesh, idx, teeth: spec.ring });
 
-    // Carrier
-    const carrier = makeCarrier(0.2, planetOrbitR + planetPitchR * 0.45, FW * 0.9, 4, planetOrbitR, planetPitchR + m);
+    // Carrier — GS3 open on engine side so tapered drum connects to ring
+    const carrierOpenSide = (idx === 2) ? 'engine' : null;
+    const carrier = makeCarrier(0.2, planetOrbitR + planetPitchR * 0.45, FW * 0.9, 4, planetOrbitR, planetPitchR + m, carrierOpenSide);
     carrier.position.x = x;
     gsGroup.add(carrier);
     parts.carriers.push({ mesh: carrier, idx });
@@ -701,11 +711,13 @@ const DRUM_STYLES = [
     { color: 0xaa6644, label: 'GS4 carrier → output drum' },           // brown
 ];
 
-function addDrum(innerR, outerR, xStart, xEnd, color, labelText) {
+function addDrum(innerR, outerR, xStart, xEnd, color, labelText, endInnerR, endOuterR, noFlanges) {
     const len = Math.abs(xEnd - xStart);
     const xMid = (xStart + xEnd) / 2;
+    // Support tapered drums: different radii at start vs end
+    const ir0 = innerR, or0 = outerR;
+    const ir1 = endInnerR ?? innerR, or1 = endOuterR ?? outerR;
 
-    // Everything in one group so it all rotates together
     const grp = new THREE.Group();
     grp.position.x = xMid;
 
@@ -719,28 +731,62 @@ function addDrum(innerR, outerR, xStart, xEnd, color, labelText) {
         depthWrite: false,
     });
 
-    // Longitudinal cage bars instead of solid shell
+    // Cage bars — straight lines from start radius to end radius
     const nBars = 5;
-    const barR = (innerR + outerR) / 2;
-    const barThick = outerR - innerR;
-    const barGeo = new THREE.BoxGeometry(len, barThick, 0.02);
+    const barThick = Math.max(or0 - ir0, or1 - ir1);
     for (let i = 0; i < nBars; i++) {
         const a = (i / nBars) * Math.PI * 2;
-        const bar = new THREE.Mesh(barGeo, drumMat);
-        bar.position.set(0, Math.cos(a) * barR, Math.sin(a) * barR);
-        bar.rotation.x = a;
+        const r0 = (ir0 + or0) / 2;
+        const r1 = (ir1 + or1) / 2;
+        // Build tapered bar from two triangles using BufferGeometry
+        const hw = 0.01; // half-width of bar
+        const positions = new Float32Array([
+            // start face (x = -len/2)
+            -len/2, Math.cos(a)*r0 - Math.sin(a)*barThick/2, Math.sin(a)*r0 + Math.cos(a)*barThick/2,
+            -len/2, Math.cos(a)*r0 + Math.sin(a)*barThick/2, Math.sin(a)*r0 - Math.cos(a)*barThick/2,
+            // end face (x = +len/2)
+             len/2, Math.cos(a)*r1 + Math.sin(a)*barThick/2, Math.sin(a)*r1 - Math.cos(a)*barThick/2,
+             len/2, Math.cos(a)*r1 - Math.sin(a)*barThick/2, Math.sin(a)*r1 + Math.cos(a)*barThick/2,
+        ]);
+        // Extrude into a thin box by duplicating with offset
+        const cos_a = Math.cos(a), sin_a = Math.sin(a);
+        const ny = -sin_a * hw, nz = cos_a * hw;
+        const verts = new Float32Array(24); // 8 vertices
+        for (let v = 0; v < 4; v++) {
+            verts[v*3]   = positions[v*3];
+            verts[v*3+1] = positions[v*3+1] + ny;
+            verts[v*3+2] = positions[v*3+2] + nz;
+        }
+        for (let v = 0; v < 4; v++) {
+            verts[12+v*3]   = positions[v*3];
+            verts[12+v*3+1] = positions[v*3+1] - ny;
+            verts[12+v*3+2] = positions[v*3+2] - nz;
+        }
+        const idx = [0,1,2, 0,2,3, 4,6,5, 4,7,6, 0,4,5, 0,5,1, 2,6,7, 2,7,3, 0,3,7, 0,7,4, 1,5,6, 1,6,2];
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute('position', new THREE.BufferAttribute(verts, 3));
+        geo.setIndex(idx);
+        geo.computeVertexNormals();
+        const bar = new THREE.Mesh(geo, drumMat);
         bar.renderOrder = 1;
         grp.add(bar);
     }
 
-    // End flanges
-    const flangeGeo = new THREE.RingGeometry(innerR, outerR, 48);
-    for (const side of [-1, 1]) {
-        const flange = new THREE.Mesh(flangeGeo, drumMat);
-        flange.rotation.y = Math.PI / 2;
-        flange.position.x = side * len / 2;
-        flange.renderOrder = 1;
-        grp.add(flange);
+    // End flanges at actual radii (skip if noFlanges)
+    if (!noFlanges) {
+        const flangeGeo0 = new THREE.RingGeometry(ir0, or0, 48);
+        const flange0 = new THREE.Mesh(flangeGeo0, drumMat);
+        flange0.rotation.y = Math.PI / 2;
+        flange0.position.x = -len / 2;
+        flange0.renderOrder = 1;
+        grp.add(flange0);
+
+        const flangeGeo1 = new THREE.RingGeometry(ir1, or1, 48);
+        const flange1 = new THREE.Mesh(flangeGeo1, drumMat);
+        flange1.rotation.y = Math.PI / 2;
+        flange1.position.x = len / 2;
+        flange1.renderOrder = 1;
+        grp.add(flange1);
     }
 
     gearGrp.add(grp);
@@ -769,14 +815,20 @@ const drum_gs1c_gs4r = addDrum(c1ir, c1or,
     gsX[0] - FW, gsX[3] + FW, DRUM_STYLES[1].color);
 parts.drums.push({ group: drum_gs1c_gs4r.group, speedKey: 'gs1_carrier', type: 'drum', drumMat: drum_gs1c_gs4r.drumMat });
 
-// GS2 ring → GS3 sun drum (P2 to P3)
-const drum_gs2r_gs3s = addDrum(c2ir, c2or,
-    gsX[1] - FW * 0.5, gsX[2] + FW * 0.5, DRUM_STYLES[2].color);
+// GS2 ring → GS3 sun drum — tapered, connecting adjacent faces
+const gs2ringR = (M_GS[1] * GS_SPEC[1].ring) / 2 + M_GS[1] * 3.5;
+const gs3sunR = (M_GS[2] * GS_SPEC[2].sun) / 2;
+const drum_gs2r_gs3s = addDrum(gs2ringR - 0.04, gs2ringR,
+    gsX[1] + FW * 0.5, gsX[2] - FW * 0.5, DRUM_STYLES[2].color, null,
+    gs3sunR - 0.02, gs3sunR + 0.02, true);
 parts.drums.push({ group: drum_gs2r_gs3s.group, speedKey: 'gs2_ring', type: 'drum', drumMat: drum_gs2r_gs3s.drumMat });
 
-// GS3 ring → GS4 sun drum (P3 to P4)
-const drum_gs3r_gs4s = addDrum(c3ir, c3or,
-    gsX[2] - FW * 0.5, gsX[3] + FW * 0.5, DRUM_STYLES[3].color);
+// GS3 ring → GS4 sun drum — tapered, connecting adjacent faces
+const gs3ringR = (M_GS[2] * GS_SPEC[2].ring) / 2 + M_GS[2] * 3.5;
+const gs4sunR = (M_GS[3] * GS_SPEC[3].sun) / 2;
+const drum_gs3r_gs4s = addDrum(gs3ringR - 0.04, gs3ringR,
+    gsX[2] + FW * 0.5, gsX[3] - FW * 0.5, DRUM_STYLES[3].color, null,
+    gs4sunR - 0.02, gs4sunR + 0.02);
 parts.drums.push({ group: drum_gs3r_gs4s.group, speedKey: 'gs3_ring', type: 'drum', drumMat: drum_gs3r_gs4s.drumMat });
 
 // GS4 carrier → output drum
