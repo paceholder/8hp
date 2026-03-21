@@ -748,7 +748,6 @@ function addDrum(innerR, outerR, xStart, xEnd, color, labelText) {
     const grp = new THREE.Group();
     grp.position.x = xMid;
 
-    const geo = makeTube(innerR, outerR, len);
     const drumMat = new THREE.MeshStandardMaterial({
         color: color,
         metalness: 0.05,
@@ -758,24 +757,29 @@ function addDrum(innerR, outerR, xStart, xEnd, color, labelText) {
         side: THREE.DoubleSide,
         depthWrite: false,
     });
-    const mesh = new THREE.Mesh(geo, drumMat);
-    mesh.renderOrder = 1;
-    grp.add(mesh);
 
-    // Wide bold stripes on drum so rotation is unmissable
-    const nStripes = 3;
-    for (let i = 0; i < nStripes; i++) {
-        const a = (i / nStripes) * Math.PI * 2;
-        // Make stripes much wider and thicker
-        const sGeo = new THREE.BoxGeometry(len * 0.96, outerR * 0.25, 0.04);
-        const darkerColor = new THREE.Color(color).multiplyScalar(0.3);
-        const sMat = new THREE.MeshStandardMaterial({
-            color: darkerColor, metalness: 0, roughness: 1,
-        });
-        const stripe = new THREE.Mesh(sGeo, sMat);
-        stripe.position.set(0, Math.cos(a) * (outerR + 0.02), Math.sin(a) * (outerR + 0.02));
-        stripe.rotation.x = a;
-        grp.add(stripe);
+    // Longitudinal cage bars instead of solid shell
+    const nBars = 5;
+    const barR = (innerR + outerR) / 2;
+    const barThick = outerR - innerR;
+    const barGeo = new THREE.BoxGeometry(len, barThick, 0.02);
+    for (let i = 0; i < nBars; i++) {
+        const a = (i / nBars) * Math.PI * 2;
+        const bar = new THREE.Mesh(barGeo, drumMat);
+        bar.position.set(0, Math.cos(a) * barR, Math.sin(a) * barR);
+        bar.rotation.x = a;
+        bar.renderOrder = 1;
+        grp.add(bar);
+    }
+
+    // End flanges
+    const flangeGeo = new THREE.RingGeometry(innerR, outerR, 48);
+    for (const side of [-1, 1]) {
+        const flange = new THREE.Mesh(flangeGeo, drumMat);
+        flange.rotation.y = Math.PI / 2;
+        flange.position.x = side * len / 2;
+        flange.renderOrder = 1;
+        grp.add(flange);
     }
 
     gearGrp.add(grp);
@@ -833,43 +837,6 @@ const outShaft = makeVisibleShaft(DIMS.outputShaftR, outShaftLen, 4, 0x6aaa45, 0
 outShaft.position.x = gsX[3] + outShaftLen / 2 + FW;
 shaftGrp.add(outShaft);
 parts.outputShaft = outShaft;
-
-// Interconnecting concentric shafts (these are hollow, keep as tubes but add stripe)
-function makeConnShaft(ir, or, length, x) {
-    const g = new THREE.Group();
-    const tubeGeo = makeTube(ir, or, length);
-    const tubeMesh = new THREE.Mesh(tubeGeo, mat(PAL.connShaft, { transparent: true, opacity: 0.35 }));
-    g.add(tubeMesh);
-    // Bold stripes on outside so rotation is visible
-    const nStripes = 4;
-    for (let i = 0; i < nStripes; i++) {
-        const a = (i / nStripes) * Math.PI * 2;
-        const stripeGeo = new THREE.BoxGeometry(length * 0.98, 0.04, (or - ir) + 0.04);
-        const stripeMesh = new THREE.Mesh(stripeGeo, new THREE.MeshStandardMaterial({
-            color: 0x333333, metalness: 0.05, roughness: 0.9,
-        }));
-        stripeMesh.position.set(0, Math.cos(a) * ((ir + or) / 2), Math.sin(a) * ((ir + or) / 2));
-        stripeMesh.rotation.x = a;
-        g.add(stripeMesh);
-    }
-    g.position.x = x;
-    return g;
-}
-
-// Concentric connection shafts — nested tubes with realistic nesting order
-// Radii defined above (before drums). Here we create the actual meshes.
-
-// GS1 carrier ↔ GS4 ring (spans full P1 to P4)
-const c1 = makeConnShaft(c1ir, c1or, Math.abs(gsX[3] - gsX[0]) + FW * 2, (gsX[0] + gsX[3]) / 2);
-shaftGrp.add(c1);
-
-// GS2 ring ↔ GS3 sun (spans P2 to P3)
-const c2 = makeConnShaft(c2ir, c2or, Math.abs(gsX[2] - gsX[1]) + FW, (gsX[1] + gsX[2]) / 2);
-shaftGrp.add(c2);
-
-// GS3 ring ↔ GS4 sun (spans P3 to P4)
-const c3 = makeConnShaft(c3ir, c3or, Math.abs(gsX[3] - gsX[2]) + FW, (gsX[2] + gsX[3]) / 2);
-shaftGrp.add(c3);
 
 // ── Clutches & Brakes ────────────────────────────────────────────────────────
 
@@ -1650,13 +1617,7 @@ function setGear(gear) {
         const col = sColor(dr.speedKey);
         dr.drumMat.color.setHex(col);
         dr.drumMat.needsUpdate = true;
-        // Also color the stripes darker shade
-        dr.group.traverse(ch => {
-            if (!ch.isMesh) return;
-            if (ch.material !== dr.drumMat && !ch.material.transparent) {
-                ch.material.color.copy(new THREE.Color(col).multiplyScalar(0.3));
-            }
-        });
+        // All cage bar/flange meshes share drumMat, so color update above covers everything
     });
 }
 
@@ -1734,11 +1695,6 @@ function animate() {
     const outRot = (curSpeeds.output || 0) * V * dt;
     parts.inputShaft.children.forEach(ch => { ch.rotation.x += inpRot; });
     parts.outputShaft.children.forEach(ch => { ch.rotation.x += outRot; });
-
-    // Connecting shafts — rotate the group so stripes orbit around the shaft axis
-    c1.rotation.x += (curSpeeds.gs1_carrier || 0) * V * dt;
-    c2.rotation.x += (curSpeeds.gs2_ring || 0) * V * dt;
-    c3.rotation.x += (curSpeeds.gs3_ring || 0) * V * dt;
 
     // Animated flow pulse — traveling bright wave along the path
     const pulsePeriod = 1.5;
