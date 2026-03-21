@@ -476,75 +476,36 @@ function makeCarrier(ir, or, length, nArms, planetOrbitR, planetR) {
     return g;
 }
 
-/** Clutch pack: alternating steel + friction discs in a drum, with radial stripes */
+/** Clutch pack: solid opaque cylinder with bee-stripe axial bands */
 function makeClutchPack(ir, or, length, nDiscs) {
     const g = new THREE.Group();
-    const gap = length / (nDiscs + 1);
-    const nStripes = 3;
-    const stripeW = 0.03;
-    const stripeD = (or - ir) * 0.92;
-    const stripeMat = new THREE.MeshStandardMaterial({
-        color: 0x444444, metalness: 0, roughness: 1, side: THREE.DoubleSide,
+
+    const lightMat = new THREE.MeshStandardMaterial({
+        color: PAL.clutchSteel, metalness: 0.1, roughness: 0.8,
     });
-    stripeMat.userData = { isStripe: true };
+    const darkMat = new THREE.MeshStandardMaterial({
+        color: 0x222222, metalness: 0, roughness: 1,
+    });
 
-    for (let i = 0; i < nDiscs; i++) {
-        const x = -length / 2 + gap * (i + 1);
-        const isSteel = i % 2 === 0;
-        const discGeo = new THREE.RingGeometry(ir, or, 48);
-        const discMat = new THREE.MeshStandardMaterial({
-            color: isSteel ? PAL.clutchSteel : PAL.clutchFric,
-            metalness: isSteel ? 0.1 : 0.05,
-            roughness: isSteel ? 0.8 : 0.9,
-            side: THREE.DoubleSide,
-        });
-        discMat.userData = { isSteel, isDrum: false };
-        const disc = new THREE.Mesh(discGeo, discMat);
-        disc.rotation.y = Math.PI / 2;
-        disc.position.x = x;
-        disc.castShadow = true;
-        g.add(disc);
-
-        // Radial stripes on each disc face so rotation is visible
-        for (let s = 0; s < nStripes; s++) {
-            const a = (s / nStripes) * Math.PI * 2;
-            const midR = (ir + or) / 2;
-            const stripeGeo = new THREE.BoxGeometry(0.015, stripeW, stripeD);
-            const sMat = stripeMat.clone();
-            sMat.userData = { isStripe: true };
-            const stripe = new THREE.Mesh(stripeGeo, sMat);
-            stripe.position.set(x, Math.cos(a) * midR, Math.sin(a) * midR);
-            stripe.rotation.x = a;
-            g.add(stripe);
-        }
+    // End caps
+    const capGeo = new THREE.RingGeometry(ir, or, 48);
+    for (const side of [-1, 1]) {
+        const cap = new THREE.Mesh(capGeo, lightMat);
+        cap.rotation.y = Math.PI / 2;
+        cap.position.x = side * length / 2;
+        g.add(cap);
     }
 
-    // Drum shell
-    const drumGeo = makeTube(or - 0.01, or + 0.04, length);
-    const drumMat = new THREE.MeshStandardMaterial({
-        color: PAL.drumOff,
-        metalness: 0.05,
-        roughness: 0.9,
-        transparent: true,
-        opacity: 0.35,
-        side: THREE.DoubleSide,
-        depthWrite: false,
-    });
-    drumMat.userData = { isDrum: true };
-    const drum = new THREE.Mesh(drumGeo, drumMat);
-    drum.castShadow = true;
-    g.add(drum);
-
-    // Piston (one end)
-    const pistonGeo = new THREE.RingGeometry(ir + 0.02, or - 0.02, 48);
-    const pistonMat = new THREE.MeshStandardMaterial({
-        color: 0x808080, metalness: 0.05, roughness: 0.9, side: THREE.DoubleSide,
-    });
-    pistonMat.userData = { isDrum: false, isSteel: true };
-    const piston = new THREE.Mesh(pistonGeo, pistonMat);
-    piston.rotation.y = Math.PI / 2;
-    piston.position.x = -length / 2 + 0.02;
-    g.add(piston);
+    // Alternating light/dark bands that together form the full cylinder wall
+    const nBands = nDiscs * 2 + 1;
+    const bandWidth = length / nBands;
+    for (let i = 0; i < nBands; i++) {
+        const isDark = i % 2 === 1;
+        const bGeo = makeTube(ir, or, bandWidth);
+        const band = new THREE.Mesh(bGeo, isDark ? darkMat : lightMat);
+        band.position.x = -length / 2 + bandWidth * (i + 0.5);
+        g.add(band);
+    }
 
     return g;
 }
@@ -1199,87 +1160,76 @@ const flowScene = new THREE.Scene();
 const flowGroup = new THREE.Group();
 flowScene.add(flowGroup);
 
-// Power flow paths per gear: routed through engaged clutch positions.
-// Clutch midpoint radii (Y offsets to pass through the clutch pack)
-const cY = {
-    A: (cSpecs.A.ir + cSpecs.A.or) / 2,           // ~0.36
-    B: (cSpecs.B.ir + cSpecs.B.or) / 2,           // ~2.65
-    C: (cSpecs.C.ir + cSpecs.C.or) / 2,           // ~0.78
-    D: (cSpecs.D.ir + cSpecs.D.or) / 2,           // ~0.50
-    E: (cSpecs.E.ir + cSpecs.E.or) / 2,           // ~2.25
-};
-const cX = { A: cSpecs.A.x, B: cSpecs.B.x, C: cSpecs.C.x, D: cSpecs.D.x, E: cSpecs.E.x };
+// Power flow paths per gear.
+// X order: brakeA → GS1+brakeB → GS2 → GS3 → C → D → E → GS4 → out
+// Y offset = radial position (0 = center shaft, positive = outward)
+// All paths go strictly left-to-right, no backtracking.
 
-// Input enters at GS2 carrier (center shaft), output exits at GS4 carrier
-const inX = gsX[1] - FW * 1.5;   // input shaft start
-const outX = gsX[3] + FW * 2.0;  // output shaft end
+const inX = gsX[1] - FW * 1.5;
+const outX = gsX[3] + FW * 2.0;
 
-// Each path: Input shaft → through engaged clutches/brakes → through gear sets → output shaft.
-// Waypoints route up/down to the clutch radius at the clutch X position.
+// Radial heights for routing (Y offsets above center axis)
+const hShaft = 0;         // center shaft
+const hInner = 0.8;       // inner drum level (sun shaft, clutch C/D)
+const hOuter = 1.6;       // outer drum level (ring gears, clutch E, brake B)
+
 const FLOW_POINTS = {
-    // 1st (A,B,C): Input → C → GS4 sun; GS1 locked (A+B) holds GS4 ring → Output
+    // 1st (A,B,C): Input→GS2 carrier→(via C connects input to GS4 sun)→GS4 reduces→Output
+    // GS1 locked by A+B holds GS4 ring at zero
     '1': [
-        [inX,0,0], [gsX[1],0,0],                          // input shaft to GS2 carrier
-        [cX.C,0,0], [cX.C,cY.C,0],                        // up to Clutch C
-        [gsX[3],cY.C,0], [gsX[3],0,0],                    // through GS4 → down to output
-        [outX,0,0],
+        [inX,hShaft,0], [gsX[1],hShaft,0],         // input to GS2 carrier
+        [gsX[1],hInner,0], [gsX[3],hInner,0],      // through Clutch C path to GS4 sun
+        [gsX[3],hShaft,0], [outX,hShaft,0],         // GS4 carrier → output
     ],
-    // 2nd (A,B,E): Input → GS2 → GS2 ring → GS3 (locked via E) → GS4 sun → Output
+    // 2nd (A,B,E): Input→GS2 carrier→GS2 ring(overdrive)→E locks GS3→GS4 sun→GS4 reduces→Output
     '2': [
-        [inX,0,0], [gsX[1],0,0],                          // input to GS2 carrier
-        [gsX[1],cY.E,0], [cX.E,cY.E,0],                   // up through GS2 ring to Clutch E
-        [gsX[3],cY.E,0], [gsX[3],0,0],                    // GS3→GS4 sun → down to output
-        [outX,0,0],
+        [inX,hShaft,0], [gsX[1],hShaft,0],         // input to GS2 carrier
+        [gsX[1],hOuter,0], [gsX[2],hOuter,0],      // GS2 ring → through E/GS3 locked
+        [gsX[3],hOuter,0], [gsX[3],hShaft,0],      // → GS4 sun → GS4 carrier
+        [outX,hShaft,0],                            // output
     ],
-    // 3rd (B,C,E): Input → C → GS4 sun + Input → GS2 → E → GS4 → Output
+    // 3rd (B,C,E): Two paths merge in GS4:
+    //   C connects input directly to GS4 sun
+    //   E locks GS3, GS2 ring feeds through
+    //   B holds GS1 ring (reaction torque)
     '3': [
-        [inX,0,0], [gsX[1],0,0],                          // input shaft
-        [cX.C,0,0], [cX.C,cY.C,0],                        // up to Clutch C
-        [gsX[3],cY.C,0], [gsX[3],0,0],                    // through GS4
-        [outX,0,0],
+        [inX,hShaft,0], [gsX[1],hShaft,0],         // input to GS2
+        [gsX[1],hInner,0], [gsX[3],hInner,0],      // via C to GS4 sun
+        [gsX[3],hShaft,0], [outX,hShaft,0],         // GS4 → output
     ],
-    // 4th (B,C,D): Input → C → GS4 + Input → GS2 → GS3 carrier → D → Output
+    // 4th (B,C,D): C→GS4 sun + D connects GS3 carrier to output
     '4': [
-        [inX,0,0], [gsX[1],0,0],                          // input shaft
-        [gsX[2],0,0], [gsX[2],cY.D,0],                    // through GS2 → GS3 carrier
-        [cX.D,cY.D,0],                                    // through Clutch D
-        [cX.D,0,0], [outX,0,0],                           // down to output
+        [inX,hShaft,0], [gsX[1],hShaft,0],         // input to GS2
+        [gsX[1],hInner,0], [gsX[2],hInner,0],      // through GS2 ring/GS3 sun
+        [gsX[2],hShaft,0], [outX,hShaft,0],         // GS3 carrier → D → output
     ],
-    // 5th (C,D,E): Input → C → GS4 sun → GS3 (locked via E) → D → Output
+    // 5th (C,D,E): C→GS4 sun, E locks GS3, D→output
     '5': [
-        [inX,0,0], [cX.C,0,0], [cX.C,cY.C,0],            // input up to Clutch C
-        [gsX[3],cY.C,0], [gsX[3],cY.D,0],                 // GS4 sun → GS3
-        [cX.D,cY.D,0],                                    // through Clutch D
-        [cX.D,0,0], [outX,0,0],                           // down to output
+        [inX,hShaft,0], [gsX[1],hShaft,0],         // input
+        [gsX[1],hInner,0], [gsX[3],hInner,0],      // via C to GS4 sun
+        [gsX[3],hShaft,0], [outX,hShaft,0],         // GS4 carrier → D → output
     ],
-    // 6th (B,D,E): Input → GS2 → GS3 (locked via E) → D → Output, 1:1
+    // 6th (B,D,E): Direct drive 1:1 — everything locked together
     '6': [
-        [inX,0,0], [gsX[1],0,0],                          // input to GS2
-        [gsX[2],0,0], [gsX[2],cY.D,0],                    // through GS2/GS3
-        [cX.D,cY.D,0],                                    // through Clutch D
-        [cX.D,0,0], [outX,0,0],                           // to output
+        [inX,hShaft,0], [outX,hShaft,0],           // straight through, 1:1
     ],
-    // 7th (A,D,E): Input → GS2 (sun=0) → ring → GS3 (locked via E) → D → Output
+    // 7th (A,D,E): Input→GS2(sun=0, overdrive)→ring→E/GS3 locked→D→output
     '7': [
-        [inX,0,0], [gsX[1],0,0],                          // input to GS2
-        [gsX[1],cY.E,0], [cX.E,cY.E,0],                   // up to GS2 ring → Clutch E
-        [gsX[3],cY.E,0], [gsX[3],cY.D,0],                 // GS3 locked
-        [cX.D,cY.D,0],                                    // through Clutch D
-        [cX.D,0,0], [outX,0,0],                           // to output
+        [inX,hShaft,0], [gsX[1],hShaft,0],         // input to GS2 carrier
+        [gsX[1],hOuter,0], [gsX[2],hOuter,0],      // GS2 ring (overdrive) → GS3 locked
+        [gsX[2],hShaft,0], [outX,hShaft,0],         // GS3 carrier → D → output
     ],
-    // 8th (A,C,D): Input → C → GS4 + GS2 → GS3 → D → Output
+    // 8th (A,C,D): Input→GS2(sun=0, max overdrive)→GS3→D→output + C→GS4
     '8': [
-        [inX,0,0], [gsX[1],0,0],                          // input shaft
-        [gsX[2],0,0], [gsX[2],cY.D,0],                    // through GS2 → GS3
-        [cX.D,cY.D,0],                                    // through Clutch D
-        [cX.D,0,0], [outX,0,0],                           // to output
+        [inX,hShaft,0], [gsX[1],hShaft,0],         // input to GS2
+        [gsX[1],hOuter,0], [gsX[2],hOuter,0],      // GS2 ring overdrive → GS3
+        [gsX[2],hShaft,0], [outX,hShaft,0],         // → D → output
     ],
-    // Reverse (A,B,D): Input → GS2 → GS3 carrier → D → Output (reversed)
+    // Reverse (A,B,D): Input→GS2→ring→GS3 carrier(reversed)→D→output
     'R': [
-        [inX,0,0], [gsX[1],0,0],                          // input to GS2
-        [gsX[2],0,0], [gsX[2],cY.D,0],                    // through GS2 → GS3
-        [cX.D,cY.D,0],                                    // through Clutch D
-        [cX.D,0,0], [outX,0,0],                           // to output
+        [inX,hShaft,0], [gsX[1],hShaft,0],         // input to GS2
+        [gsX[1],hOuter,0], [gsX[2],hOuter,0],      // GS2 ring → GS3
+        [gsX[2],hShaft,0], [outX,hShaft,0],         // GS3 carrier → D → output (reversed)
     ],
 };
 
@@ -1563,36 +1513,11 @@ function setGear(gear) {
         p.mesh.renderOrder = on ? 2 : 0;
     });
 
-    // ── Clutches: engaged = vivid orange, disengaged = nearly invisible
+    // ── Clutches: engaged = visible barrel, disengaged = hidden
     ['A','B','C','D','E'].forEach(el => {
         const on = d.engaged.includes(el);
         const grp = parts.clutches[el];
-        grp.traverse(ch => {
-            if (!ch.isMesh) return;
-            const m = ch.material;
-            if (m.userData?.isStripe) {
-                // Stripes: contrasting dark mark, visible when engaged
-                m.color.setHex(on ? 0x331100 : 0x666666);
-                m.opacity = on ? 0.95 : 0.06;
-                m.transparent = !on;
-                m.depthWrite = on;
-                m.needsUpdate = true;
-            } else if (m.userData?.isDrum) {
-                setM(m,
-                    on ? PAL.drumOn : 0xbbbbbb,
-                    on ? 0.65 : 0.04,
-                    on ? PAL.engagedEmit : 0x000000,
-                    on ? 0.7 : 0);
-            } else {
-                setM(m,
-                    on ? (m.userData?.isSteel ? 0xee8844 : 0xdd5522) : 0xcccccc,
-                    on ? 0.95 : 0.06,
-                    on ? 0x551800 : 0x000000,
-                    on ? 0.4 : 0);
-                m.side = THREE.DoubleSide; // flat RingGeometry
-            }
-            ch.renderOrder = on ? 3 : 0;
-        });
+        grp.visible = on;
     });
 
     // ── Shafts: colored by velocity
@@ -1711,17 +1636,11 @@ function animate() {
         }
     });
 
-    // Clutch rotation + engaged pulse
+    // Clutch rotation
     ['A','B','C','D','E'].forEach(el => {
         const g = parts.clutches[el];
         const speedKey = CLUTCH_SPEED_KEYS[el];
         g.rotation.x += (curSpeeds[speedKey] || 0) * V * dt;
-        if (engaged.includes(el)) {
-            const p = 1 + Math.sin(t * 4) * 0.02;
-            g.scale.set(1, p, p);
-        } else {
-            g.scale.set(1, 1, 1);
-        }
     });
 
     controls.update();
