@@ -588,8 +588,8 @@ const SCALE = 1 / 50; // mm to model units
 // Real diameters (mm) → model radii
 const DIMS = {
     caseBore:    244 * SCALE / 2,   // 2.44 → r=1.22
-    tcOD:        268 * SCALE / 2,   // torque converter OD
-    tcDepth:     174 * SCALE,       // TC depth
+    tcOD:        268 * SCALE / 2,   // torque converter radius
+    tcDepth:     174 * SCALE / 2,   // TC depth (half — we model one side)
     s1OD:        73.7 * SCALE / 2,  // P1 sun OD (48T)
     s2OD:        81.8 * SCALE / 2,  // P2 sun OD (48T)
     s3OD:        89.5 * SCALE / 2,  // P3 sun OD (69T, 8HP70)
@@ -603,7 +603,7 @@ const DIMS = {
     drumC_OD:    117 * SCALE / 2,   // Drum C inner OD
     drumE_OD:    117 * SCALE / 2,   // Drum E inner OD
     hubD_OD:     162 * SCALE / 2,   // Hub D OD
-    hubD_H:      174 * SCALE,       // Hub D height (axial)
+    hubD_H:      30 * SCALE,        // Hub D clutch pack thickness (4 plates ~17mm + clearance)
     inputShaftR:  16 * SCALE / 2,   // input shaft radius (estimated)
     outputShaftR: 35 * SCALE / 2,   // output shaft spline OD
 };
@@ -621,18 +621,19 @@ const M_GS = [
 ];
 
 // Axial layout (mm from front face, engine side = 0)
-// Real order: TC | Pump | Brakes A&B | P1 | P2 | C/D/E clutches | P3 | P4 | Output
+// Real order: TC | Brake A | P1 + Brake B | P2 | P3 | C | D | E | P4 | Output
 // Total gear train length ≈ 520mm
 const AX = {
-    brakesAB: 60 * SCALE,    // brakes in stator support, front
-    P1:       120 * SCALE,    // first planetary
-    P2:       190 * SCALE,    // second planetary (input carrier)
-    clutchCE: 260 * SCALE,    // C/E clutch zone
-    clutchD:  310 * SCALE,    // D clutch hub
-    P3:       360 * SCALE,    // third planetary
-    P4:       440 * SCALE,    // fourth planetary (output)
+    brakeA:   50 * SCALE,     // Brake A, front
+    P1:       100 * SCALE,    // first planetary (Brake B wraps around it)
+    P2:       170 * SCALE,    // second planetary
+    P3:       240 * SCALE,    // third planetary
+    clutchC:  310 * SCALE,    // Clutch C
+    clutchD:  350 * SCALE,    // Clutch D
+    clutchE:  390 * SCALE,    // Clutch E
+    P4:       450 * SCALE,    // fourth planetary (output)
 };
-const axCenter = 280 * SCALE; // center point for model origin
+const axCenter = 260 * SCALE; // center point for model origin
 
 // Face widths (realistic: gear face ~22mm, clutch packs 17-26mm)
 const FW = 22 * SCALE;       // gear face width
@@ -873,18 +874,19 @@ shaftGrp.add(c3);
 // ── Clutches & Brakes ────────────────────────────────────────────────────────
 
 // Clutch/brake specs with real dimensions and positions
-// Brakes A&B are at the FRONT (in stator support), before P1
-// Clutches C, D, E are between P2 and P3/P4
-const brakesX = AX.brakesAB - axCenter;
-const clutchCEX = AX.clutchCE - axCenter;
+// Real order: Brake A | P1 + Brake B | P2 | P3 | C | D | E | P4
+const brakeAX = AX.brakeA - axCenter;
+const brakeBX = AX.P1 - axCenter;  // Brake B wraps around P1
+const clutchCX = AX.clutchC - axCenter;
 const clutchDX = AX.clutchD - axCenter;
+const clutchEX = AX.clutchE - axCenter;
 
 const cSpecs = {
-    A: { ir: DIMS.inputShaftR + 0.02, or: DIMS.brakeA_OD, len: FW_CLUTCH, nDiscs: 5, x: brakesX },
-    B: { ir: DIMS.brakeA_OD + 0.04, or: DIMS.brakeB_OD, len: FW_CLUTCH, nDiscs: 5, x: brakesX + FW_CLUTCH * 1.2 },
-    C: { ir: DIMS.drumC_OD - 0.05, or: DIMS.clutchC_OD, len: FW_CLUTCH, nDiscs: 6, x: clutchCEX },
-    D: { ir: DIMS.outputShaftR + 0.02, or: DIMS.clutchD_OD, len: DIMS.hubD_H, nDiscs: 4, x: clutchDX },
-    E: { ir: DIMS.drumE_OD - 0.05, or: DIMS.clutchE_OD, len: FW_CLUTCH, nDiscs: 5, x: clutchCEX + FW_CLUTCH * 1.5 },
+    A: { ir: DIMS.inputShaftR + 0.02, or: DIMS.brakeA_OD, len: FW_CLUTCH, nDiscs: 5, x: brakeAX },
+    B: { ir: DIMS.brakeB_OD - 0.15, or: DIMS.brakeB_OD, len: FW_CLUTCH, nDiscs: 5, x: brakeBX },
+    C: { ir: DIMS.drumC_OD - 0.05, or: DIMS.clutchC_OD, len: FW_CLUTCH, nDiscs: 6, x: clutchCX },
+    D: { ir: DIMS.drumC_OD - 0.05, or: DIMS.clutchC_OD, len: FW_CLUTCH, nDiscs: 4, x: clutchDX },
+    E: { ir: DIMS.drumE_OD - 0.05, or: DIMS.clutchE_OD + 0.08, len: FW_CLUTCH, nDiscs: 5, x: clutchEX },
 };
 
 // Speed key for each clutch — what member speed drives it
@@ -921,9 +923,11 @@ Object.entries(CLUTCH_LABELS).forEach(([name, text]) => {
 // ── Torque Converter (Hydrotransformator) ────────────────────────────────────
 
 const tcGroup = new THREE.Group();
-const tcX = gsX[0] - (AX.P1 - 0) * SCALE - DIMS.tcDepth / 2; // in front of everything
-const tcR = DIMS.tcOD;
+// TC sits just before Brake A, in the bell housing
+const brakesXpos = AX.brakeA - axCenter;
 const tcWidth = DIMS.tcDepth;
+const tcX = brakesXpos - FW_CLUTCH - tcWidth / 2; // just before brakes
+const tcR = Math.min(DIMS.tcOD, DIMS.caseBore - 0.05); // must fit inside case bore
 
 // Impeller (engine side) — donut shape + vane group
 const impellerGrp = new THREE.Group();
