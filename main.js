@@ -560,8 +560,8 @@ const DIMS = {
     caseBore:    244 * SCALE / 2,   // 2.44 → r=1.22
     tcOD:        268 * SCALE / 2,   // torque converter radius
     tcDepth:     174 * SCALE / 2,   // TC depth (half — we model one side)
-    s1OD:        73.7 * SCALE / 2,  // P1 sun OD (48T)
-    s2OD:        81.8 * SCALE / 2,  // P2 sun OD (48T)
+    s1OD:        73.7 * SCALE / 2,  // P1/P2 sun OD (48T, shared sun)
+    s2OD:        73.7 * SCALE / 2,  // same as s1OD — one physical part
     s3OD:        89.5 * SCALE / 2,  // P3 sun OD (69T, 8HP70)
     s4OD:        35 * SCALE / 2,    // P4 sun OD (23T, estimated)
     p3RingOD:    160.4 * SCALE / 2, // P3 ring gear OD
@@ -633,6 +633,18 @@ let inactiveOpacity = 0.15; // controlled by UI slider
 // Real sun ODs per gear set
 const SUN_RADII = [DIMS.s1OD, DIMS.s2OD, DIMS.s3OD, DIMS.s4OD];
 
+// Shared GS1+GS2 sun gear — one long gear spanning both planetary sets
+const sharedSunM = M_GS[0];
+const sharedSunLen = Math.abs(gsX[1] - gsX[0]) + FW;  // spans GS1 to GS2
+const sharedSunGeo = makeExternalGear(sharedSunM, GS_SPEC[0].sun, sharedSunLen, 0.18);
+const sharedSunMesh = new THREE.Mesh(sharedSunGeo, mat(PAL.sun, { metalness: 0.05, roughness: 0.85 }));
+sharedSunMesh.position.x = (gsX[0] + gsX[1]) / 2;  // centered between GS1 and GS2
+sharedSunMesh.castShadow = true;
+sharedSunMesh.receiveShadow = true;
+gearGrp.add(sharedSunMesh);
+// Register shared sun once under GS1 (gs1_sun = gs2_sun always)
+parts.suns.push({ mesh: sharedSunMesh, idx: 0, teeth: GS_SPEC[0].sun });
+
 GS_SPEC.forEach((spec, idx) => {
     const x = gsX[idx];
     const m = M_GS[idx]; // per-set module
@@ -648,14 +660,19 @@ GS_SPEC.forEach((spec, idx) => {
     gearGrp.add(gsGroup);
     parts.gsGroups.push(gsGroup);
 
-    // Sun
-    const sunGeo = makeExternalGear(m, spec.sun, FW * 0.82, 0.18);
-    const sunMesh = new THREE.Mesh(sunGeo, mat(PAL.sun, { metalness: 0.05, roughness: 0.85 }));
-    sunMesh.position.x = x;
-    sunMesh.castShadow = true;
-    sunMesh.receiveShadow = true;
-    gsGroup.add(sunMesh);
-    parts.suns.push({ mesh: sunMesh, idx, teeth: spec.sun });
+    // Sun — GS1 and GS2 share the long sun gear above; GS3/GS4 get their own
+    let sunMesh;
+    if (idx <= 1) {
+        sunMesh = sharedSunMesh;
+    } else {
+        const sunGeo = makeExternalGear(m, spec.sun, FW * 0.82, 0.18);
+        sunMesh = new THREE.Mesh(sunGeo, mat(PAL.sun, { metalness: 0.05, roughness: 0.85 }));
+        sunMesh.position.x = x;
+        sunMesh.castShadow = true;
+        sunMesh.receiveShadow = true;
+        gsGroup.add(sunMesh);
+        parts.suns.push({ mesh: sunMesh, idx, teeth: spec.sun });
+    }
 
     // Ring
     const ringOuterR = ringPitchR + m * 3.5;
@@ -670,8 +687,8 @@ GS_SPEC.forEach((spec, idx) => {
     gsGroup.add(ringMesh);
     parts.rings.push({ mesh: ringMesh, idx, teeth: spec.ring });
 
-    // Carrier — GS3 open on engine side so tapered drum connects to ring
-    const carrierOpenSide = (idx === 2) ? 'engine' : null;
+    // GS1 open on engine side (input), GS3 open on engine side (tapered drum)
+    const carrierOpenSide = (idx === 0 || idx === 2) ? 'engine' : null;
     const carrier = makeCarrier(0.2, planetOrbitR + planetPitchR * 0.45, FW * 0.9, 4, planetOrbitR, planetPitchR + m, carrierOpenSide);
     carrier.position.x = x;
     gsGroup.add(carrier);
@@ -805,15 +822,31 @@ const c2or = c2ir + 0.04;
 const c3ir = c2or + 0.02;            // GS3 ring ↔ GS4 sun inner
 const c3or = c3ir + 0.04;
 
-// Sun shaft drum: wraps around P1 & P2 sun gears (Brake A grabs this)
-const drum_sunShaft = addDrum(sunShaftR, sunShaftR + 0.03,
-    gsX[0] - FW, gsX[1] + FW, DRUM_STYLES[0].color);
-parts.drums.push({ group: drum_sunShaft.group, speedKey: 'gs1_sun', type: 'drum', drumMat: drum_sunShaft.drumMat });
+// Sun shaft drum removed — the shared long sun gear itself is the visual connection
 
-// GS1 carrier → GS4 ring drum (spans full length P1 to P4)
-const drum_gs1c_gs4r = addDrum(c1ir, c1or,
-    gsX[0] - FW, gsX[3] + FW, DRUM_STYLES[1].color);
-parts.drums.push({ group: drum_gs1c_gs4r.group, speedKey: 'gs1_carrier', type: 'drum', drumMat: drum_gs1c_gs4r.drumMat });
+// GS1 carrier → GS4 ring drum (concentric tube, GS1 output face to GS4 input face)
+{
+    const xStart = gsX[0] + FW * 0.5 + 0.02;  // just inside GS1 tail face
+    const xEnd = gsX[3] - FW * 0.5 - 0.02;    // just inside GS4 engine face
+    const grp = new THREE.Group();
+    const xMid = (xStart + xEnd) / 2;
+    const len = xEnd - xStart;
+    grp.position.x = xMid;
+    const tubeIr = DIMS.inputShaftR + 0.005;
+    const tubeOr = tubeIr + 0.01;
+    const drumMat = new THREE.MeshStandardMaterial({
+        color: DRUM_STYLES[1].color,
+        metalness: 0.05, roughness: 0.85,
+        transparent: true, opacity: 0.4,
+        side: THREE.DoubleSide, depthWrite: false,
+    });
+    const tubeGeo = makeTube(tubeIr, tubeOr, len);
+    const tube = new THREE.Mesh(tubeGeo, drumMat);
+    tube.renderOrder = 1;
+    grp.add(tube);
+    gearGrp.add(grp);
+    parts.drums.push({ group: grp, speedKey: 'gs1_carrier', type: 'drum', drumMat });
+}
 
 // GS2 ring → GS3 sun drum — tapered, connecting adjacent faces
 const gs2ringR = (M_GS[1] * GS_SPEC[1].ring) / 2 + M_GS[1] * 3.5;
@@ -823,13 +856,80 @@ const drum_gs2r_gs3s = addDrum(gs2ringR - 0.04, gs2ringR,
     gs3sunR - 0.02, gs3sunR + 0.02, true);
 parts.drums.push({ group: drum_gs2r_gs3s.group, speedKey: 'gs2_ring', type: 'drum', drumMat: drum_gs2r_gs3s.drumMat });
 
-// GS3 ring → GS4 sun drum — tapered, connecting adjacent faces
+// GS3 ring → GS4 sun drum — polyline rods routed above clutches C/D/E
 const gs3ringR = (M_GS[2] * GS_SPEC[2].ring) / 2 + M_GS[2] * 3.5;
 const gs4sunR = (M_GS[3] * GS_SPEC[3].sun) / 2;
-const drum_gs3r_gs4s = addDrum(gs3ringR - 0.04, gs3ringR,
-    gsX[2] + FW * 0.5, gsX[3] - FW * 0.5, DRUM_STYLES[3].color, null,
-    gs4sunR - 0.02, gs4sunR + 0.02);
-parts.drums.push({ group: drum_gs3r_gs4s.group, speedKey: 'gs3_ring', type: 'drum', drumMat: drum_gs3r_gs4s.drumMat });
+const clutchClearR = Math.max(DIMS.clutchC_OD, DIMS.clutchE_OD + 0.08) + 0.06; // above clutch OD
+{
+    const grp = new THREE.Group();
+    const drumMat = new THREE.MeshStandardMaterial({
+        color: DRUM_STYLES[3].color,
+        metalness: 0.05, roughness: 0.85,
+        transparent: true, opacity: 0.4,
+        side: THREE.DoubleSide, depthWrite: false,
+    });
+
+    // Polyline waypoints (in world X, local R):
+    // 1) GS4 sun surface → short stub toward output (+X)
+    // 2) radial outward to clearance radius
+    // 3) axial toward GS3 ring (-X)
+    // 4) radial inward to GS3 ring surface
+    const x4 = gsX[3] + FW * 0.5;      // GS4 tail face
+    const x4out = x4 + FW;              // ~1 inch past GS4 toward output
+    const x3 = gsX[2] + FW * 0.5;       // GS3 tail face (facing clutches)
+    const xMid = (x3 + x4out) / 2;
+    grp.position.x = xMid;
+
+    const nBars = 5;
+    const barR = 0.015; // rod radius
+    for (let i = 0; i < nBars; i++) {
+        const a = (i / nBars) * Math.PI * 2;
+        const cos_a = Math.cos(a), sin_a = Math.sin(a);
+
+        // 4 segments per rod, each a thin cylinder
+        const segments = [
+            // seg 1: axial stub at GS4 sun radius
+            { from: [x4, gs4sunR], to: [x4out, gs4sunR] },
+            // seg 2: radial outward at x4out
+            { from: [x4out, gs4sunR], to: [x4out, clutchClearR] },
+            // seg 3: axial run above clutches
+            { from: [x4out, clutchClearR], to: [x3, clutchClearR] },
+            // seg 4: radial inward to GS3 ring
+            { from: [x3, clutchClearR], to: [x3, gs3ringR] },
+        ];
+
+        segments.forEach(({ from, to }) => {
+            const [fx, fr] = from;
+            const [tx, tr] = to;
+            const dx = tx - fx, dr = tr - fr;
+            const segLen = Math.sqrt(dx * dx + dr * dr);
+            const mx = (fx + tx) / 2 - xMid; // local X
+            const mr = (fr + tr) / 2;
+
+            const geo = new THREE.CylinderGeometry(barR, barR, segLen, 6);
+            const rod = new THREE.Mesh(geo, drumMat);
+
+            // CylinderGeometry axis is Y; we need to orient it along the segment direction
+            // Segment direction in local frame: (dx, dr*cos_a, dr*sin_a)
+            // For axial segments (dr=0): rotate 90° around Z
+            // For radial segments (dx=0): rotate around X by angle a
+            if (Math.abs(dr) < 0.001) {
+                // Axial segment
+                rod.rotation.z = Math.PI / 2;
+                rod.position.set(mx, cos_a * mr, sin_a * mr);
+            } else if (Math.abs(dx) < 0.001) {
+                // Radial segment
+                rod.rotation.x = a;
+                rod.position.set(mx, cos_a * mr, sin_a * mr);
+            }
+            rod.renderOrder = 1;
+            grp.add(rod);
+        });
+    }
+
+    gearGrp.add(grp);
+    parts.drums.push({ group: grp, speedKey: 'gs3_ring', type: 'drum', drumMat });
+}
 
 // GS4 carrier → output drum
 const gs4cR = (DIMS.s4OD + SUN_RADII[3] * GS_SPEC[3].ring / GS_SPEC[3].sun) / 2;
@@ -1118,6 +1218,10 @@ function solveSpeeds(gear) {
     if (engaged.includes('C')) { s.gs4_sun = 1; }
     if (engaged.includes('D')) { s.gs3_carrier = out; }
 
+    // Rigid: GS1_sun = GS2_sun (same physical shaft)
+    if (s.gs1_sun !== undefined) s.gs2_sun = s.gs1_sun;
+    else if (s.gs2_sun !== undefined) s.gs1_sun = s.gs2_sun;
+
     // Rigid: GS3_ring = GS4_sun
     if (s.gs4_sun !== undefined) s.gs3_ring = s.gs4_sun;
 
@@ -1185,6 +1289,10 @@ function solveSpeeds(gear) {
     if (s.gs2_ring === undefined && s.gs3_sun !== undefined) s.gs2_ring = s.gs3_sun;
     if (s.gs2_sun === undefined && s.gs2_ring !== undefined)
         s.gs2_sun = (1 + k[1]) * s.gs2_carrier - k[1] * s.gs2_ring;
+
+    // Final: enforce gs1_sun = gs2_sun
+    if (s.gs1_sun !== undefined && s.gs2_sun === undefined) s.gs2_sun = s.gs1_sun;
+    if (s.gs2_sun !== undefined && s.gs1_sun === undefined) s.gs1_sun = s.gs2_sun;
 
     // Default unknowns to 0
     for (let i = 1; i <= 4; i++)
