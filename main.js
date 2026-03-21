@@ -207,7 +207,7 @@ function makeExternalGear(module, teeth, faceWidth, boreR) {
     const m = module;
     const z = teeth;
     const rp = (m * z) / 2;           // pitch radius
-    const ra = rp + m;                 // addendum (tip)
+    const ra = rp + 0.7 * m;          // addendum (tip) — reduced for clearance
     const rd = rp - 1.25 * m;         // dedendum (root)
     const phi = 20 * Math.PI / 180;   // pressure angle
     const rb = rp * Math.cos(phi);    // base circle
@@ -215,13 +215,13 @@ function makeExternalGear(module, teeth, faceWidth, boreR) {
     // Involute function: inv(α) = tan(α) - α
     function inv(alpha) { return Math.tan(alpha) - alpha; }
 
-    // Angular half-tooth-thickness at any radius r
-    // At pitch circle this equals π/(2z); follows involute outward, radial line inward
-    const halfThickPitch = Math.PI / (2 * z);
+    // Angular half-tooth-thickness at any radius r — reduced by backlash factor
+    const backlash = 0.25;            // fraction of tooth pitch for clearance
+    const halfThickPitch = Math.PI / (2 * z) * (1 - backlash);
     const invPhi = inv(phi);
 
     function halfThickAt(r) {
-        if (r <= rb) return halfThickPitch + invPhi; // straight radial below base circle
+        if (r <= rb) return halfThickPitch + invPhi;
         const alpha = Math.acos(rb / r);
         return halfThickPitch + invPhi - inv(alpha);
     }
@@ -300,7 +300,7 @@ function makeInternalGear(module, teeth, faceWidth, outerR) {
     const m = module;
     const z = teeth;
     const rp = (m * z) / 2;
-    const ra = rp - m;               // addendum (tip, inward)
+    const ra = rp - 0.7 * m;         // addendum (tip, inward) — reduced for clearance
     const rd = rp + 0.8 * m;         // dedendum (root, outward)
     const phi = 20 * Math.PI / 180;
     const rb = rp * Math.cos(phi);
@@ -308,11 +308,13 @@ function makeInternalGear(module, teeth, faceWidth, outerR) {
     function inv(alpha) { return Math.tan(alpha) - alpha; }
     const invPhi = inv(phi);
 
-    // Internal gear tooth half-thickness (note sign difference from external)
+    // Internal gear tooth half-thickness — reduced by backlash factor
+    const backlash = 0.25;
+    const halfThickBase = Math.PI / (2 * z) * (1 - backlash);
     function halfThickAt(r) {
-        if (r <= rb) return Math.PI / (2 * z) - invPhi;
+        if (r <= rb) return halfThickBase - invPhi;
         const alpha = Math.acos(rb / r);
-        return Math.PI / (2 * z) - invPhi + inv(alpha);
+        return halfThickBase - invPhi + inv(alpha);
     }
 
     const shape = new THREE.Shape();
@@ -438,7 +440,7 @@ function makeCarrier(ir, or, length, nArms, planetOrbitR, planetR) {
     const hubOr = ir + 0.08;
     const hubGeo = new THREE.RingGeometry(ir, hubOr, 48);
 
-    // Outer ring (around planet orbit, narrow band)
+    // Outer ring (around planet orbit, narrow band) — same material as arms
     const outerIr = planetOrbitR + planetR * 0.6;
     const outerGeo = new THREE.RingGeometry(outerIr, or, 48);
 
@@ -606,8 +608,17 @@ const DIMS = {
     outputShaftR: 35 * SCALE / 2,   // output shaft spline OD
 };
 
-// Gear module derived from real dimensions: module = 2*r / teeth
+// Gear module derived from P1 sun: module = OD / teeth (OD = 2*radius)
+// All meshing gears within a set share the same module
 const M = (DIMS.s1OD * 2) / 48;  // ≈ 0.0307 per tooth
+
+// Per-gear-set module (different sets can have different modules)
+const M_GS = [
+    (DIMS.s1OD * 2) / 48,  // GS1: from P1 sun
+    (DIMS.s2OD * 2) / 48,  // GS2: from P2 sun
+    (DIMS.s3OD * 2) / 69,  // GS3: from P3 sun
+    (DIMS.s4OD * 2) / 23,  // GS4: from P4 sun
+];
 
 // Axial layout (mm from front face, engine side = 0)
 // Real order: TC | Pump | Brakes A&B | P1 | P2 | C/D/E clutches | P3 | P4 | Output
@@ -653,10 +664,11 @@ const SUN_RADII = [DIMS.s1OD, DIMS.s2OD, DIMS.s3OD, DIMS.s4OD];
 
 GS_SPEC.forEach((spec, idx) => {
     const x = gsX[idx];
-    const sunPitchR = SUN_RADII[idx]; // use real measured sun radius
-    const ringPitchR = (sunPitchR * spec.ring) / spec.sun; // proportional ring
+    const m = M_GS[idx]; // per-set module
+    const sunPitchR = (m * spec.sun) / 2;
+    const ringPitchR = (m * spec.ring) / 2;
     const planetTeeth = (spec.ring - spec.sun) / 2;
-    const planetPitchR = (ringPitchR - sunPitchR) / 2;
+    const planetPitchR = (m * planetTeeth) / 2;
     const planetOrbitR = sunPitchR + planetPitchR;
 
     // Per-gear-set group for visibility toggling
@@ -666,7 +678,7 @@ GS_SPEC.forEach((spec, idx) => {
     parts.gsGroups.push(gsGroup);
 
     // Sun
-    const sunGeo = makeExternalGear(M, spec.sun, FW * 0.82, 0.18);
+    const sunGeo = makeExternalGear(m, spec.sun, FW * 0.82, 0.18);
     const sunMesh = new THREE.Mesh(sunGeo, mat(PAL.sun, { metalness: 0.05, roughness: 0.85 }));
     sunMesh.position.x = x;
     sunMesh.castShadow = true;
@@ -675,8 +687,8 @@ GS_SPEC.forEach((spec, idx) => {
     parts.suns.push({ mesh: sunMesh, idx, teeth: spec.sun });
 
     // Ring
-    const ringOuterR = ringPitchR + M * 1.8;
-    const ringGeo = makeInternalGear(M, spec.ring, FW * 0.88, ringOuterR);
+    const ringOuterR = ringPitchR + m * 3.5;
+    const ringGeo = makeInternalGear(m, spec.ring, FW * 0.88, ringOuterR);
     const ringMesh = new THREE.Mesh(ringGeo, mat(PAL.ring, {
         metalness: 0.05, roughness: 0.85, transparent: true, opacity: 0.78,
         polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1,
@@ -688,32 +700,27 @@ GS_SPEC.forEach((spec, idx) => {
     parts.rings.push({ mesh: ringMesh, idx, teeth: spec.ring });
 
     // Carrier
-    const carrier = makeCarrier(0.2, planetOrbitR + planetPitchR * 0.45, FW * 0.9, 4, planetOrbitR, planetPitchR + M);
+    const carrier = makeCarrier(0.2, planetOrbitR + planetPitchR * 0.45, FW * 0.9, 4, planetOrbitR, planetPitchR + m);
     carrier.position.x = x;
     gsGroup.add(carrier);
     parts.carriers.push({ mesh: carrier, idx });
 
     // Planets (4 per set)
     const nP = 4;
+    // Rotate sun and ring by half-tooth so gaps face the first planet (at angle 0)
+    sunMesh.rotation.x = Math.PI / spec.sun;
+    ringMesh.rotation.x = Math.PI / spec.ring;
     for (let p = 0; p < nP; p++) {
         const a = (p / nP) * Math.PI * 2;
-        const pGeo = makeExternalGear(M, planetTeeth, FW * 0.75, 0.06);
+        const pGeo = makeExternalGear(m, planetTeeth, FW * 0.75, 0.06);
         const pMesh = new THREE.Mesh(pGeo, mat(PAL.planet, { metalness: 0.05, roughness: 0.85 }));
         pMesh.position.set(x, Math.cos(a) * planetOrbitR, Math.sin(a) * planetOrbitR);
-        // Initial rotation: align planet gap with ring tooth at ring-planet contact (visual angle π/2)
-        const tp = 2 * Math.PI / planetTeeth;
-        const kBest = Math.round(Math.PI / 2 / tp - 0.5);
-        const baseOffset = Math.PI / 2 - (kBest + 0.5) * tp;
-        pMesh.rotation.x = baseOffset + a * (1 + spec.sun / planetTeeth);
+        // Rolling constraint: planet rotates -a * Zs/Zp as it orbits by a
+        // Tooth at angle 0 (outward) for first planet; gap at π (inward) faces sun
+        pMesh.rotation.x = -a * spec.sun / planetTeeth;
         pMesh.castShadow = true;
         gsGroup.add(pMesh);
         parts.planets.push({ mesh: pMesh, idx, angle: a, orbitR: planetOrbitR, baseX: x, pTeeth: planetTeeth });
-
-        // Pin shaft
-        const pinGeo = makeTube(0, 0.045, FW * 0.9, 12);
-        const pin = new THREE.Mesh(pinGeo, mat(0x606068, { metalness: 0.05, roughness: 0.9 }));
-        pin.position.set(x, Math.cos(a) * planetOrbitR, Math.sin(a) * planetOrbitR);
-        gsGroup.add(pin);
     }
 });
 
@@ -1557,7 +1564,7 @@ function setGear(gear) {
         const key = `gs${idx + 1}_ring`;
         const col = sColor(key);
         const on = isMoving(key);
-        setM(mesh.material, col, on ? 0.85 : inactiveOpacity * 0.75, 0x000000, 0);
+        setM(mesh.material, col, on ? 0.95 : inactiveOpacity, 0x000000, 0);
         mesh.visible = on || inactiveOpacity > 0.05;
         mesh.renderOrder = on ? 1 : 0;
     });
